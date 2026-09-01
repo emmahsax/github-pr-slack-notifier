@@ -24,7 +24,7 @@ resource "aws_lambda_function" "this" {
   role             = aws_iam_role.this.arn
   runtime          = "provided.al2023"
   source_code_hash = local.lambda_source_code_hash
-  timeout          = 10
+  timeout          = 30
 
   tags = merge(
     local.tags,

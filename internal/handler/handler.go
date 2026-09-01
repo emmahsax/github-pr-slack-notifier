@@ -192,19 +192,26 @@ func (h *Handler) handlePullRequestReview(ctx context.Context, body []byte) erro
 	var verb string
 	switch evt.Review.State {
 	case "approved":
-		verb = "approved this PR"
+		verb = "approved the PR"
 	case "changes_requested":
 		verb = "requested changes"
 	case "commented":
-		// A plain review comment carries feedback text the same way an
-		// issue/review comment does, so it's treated as comment-equivalent.
 		verb = "commented"
 	default:
 		return nil // e.g. "dismissed", "pending" — not a notification trigger
 	}
-	var detail string
-	if evt.Review.Body != "" {
-		detail = preview(evt.Review.Body)
+	detail := preview(evt.Review.Body)
+
+	// A "commented" review with no top-level summary text carries no
+	// information of its own — GitHub creates this wrapper whenever
+	// someone adds one or more inline comments (each already notified
+	// separately via pull_request_review_comment, AC-018) without also
+	// writing a review summary, so without this check it would show up
+	// as a bare, contentless "commented" message. "approved"/
+	// "changes_requested" are still notification-worthy even with no
+	// text, since the verdict itself is the content.
+	if evt.Review.State == "commented" && detail == "" {
+		return nil
 	}
 
 	client, err := h.installationFor(ctx, evt.Installation.ID)
@@ -244,12 +251,17 @@ func (h *Handler) handlePullRequest(ctx context.Context, body []byte) error {
 	var verb string
 	switch {
 	case evt.Action == "closed" && evt.PullRequest.Merged:
-		verb = "merged this PR" // REQ-011/REQ-012: notified regardless of who merged it
+		verb = "merged the PR" // REQ-011/REQ-012: notified regardless of who merged it
 	case evt.Action == "labeled":
 		if evt.PullRequest.Draft { // REQ-005
 			return nil
 		}
 		verb = fmt.Sprintf("added the %q label", evt.Label.Name)
+	case evt.Action == "unlabeled":
+		if evt.PullRequest.Draft { // REQ-005
+			return nil
+		}
+		verb = fmt.Sprintf("removed the %q label", evt.Label.Name)
 	default:
 		return nil // e.g. "opened", "closed" without merge, "ready_for_review" — not triggers (REQ-007)
 	}
@@ -280,17 +292,16 @@ func (h *Handler) handlePullRequest(ctx context.Context, body []byte) error {
 // every message they send is flat: the same header text plus the action as
 // a blockquoted line underneath, in one message.
 //
-// verb is always present ("commented", "approved this PR", ...); detail is
-// the optional freeform comment/review body preview. Only "@sender verb:"
-// is bold — matching the header's bold-up-to-colon style — with detail (if
-// any) left plain; when there's no detail, the whole line is bold instead.
+// verb is always present ("commented", "approved the PR", ...); detail is
+// the optional freeform comment/review body preview. Only "@sender" is
+// bold; the verb and detail are always plain text.
 func (h *Handler) notify(ctx context.Context, owner, repo string, pr *githubapp.PullRequest, senderLogin, verb, detail string) error {
 	header := buildHeader(owner, repo, pr)
 	var actionLine string
 	if detail != "" {
-		actionLine = fmt.Sprintf("*@%s %s:* %s", senderLogin, verb, detail)
+		actionLine = fmt.Sprintf("*@%s* %s: %s", senderLogin, verb, detail)
 	} else {
-		actionLine = fmt.Sprintf("*@%s %s*", senderLogin, verb)
+		actionLine = fmt.Sprintf("*@%s* %s", senderLogin, verb)
 	}
 
 	if h.threadStore == nil {

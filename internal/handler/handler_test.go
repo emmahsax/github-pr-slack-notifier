@@ -111,7 +111,7 @@ func TestHandle_IssueComment_AuthoredAndSubscribed(t *testing.T) {
 	if len(env.sent) != 1 {
 		t.Fatalf("expected 1 notification, got %d: %v", len(env.sent), env.sent)
 	}
-	want := "*<https://github.com/acme/widgets/pull/42|acme/widgets#42> (@emmahsax):* Add widget support\n> *@reviewer1 commented:* I like this!"
+	want := "*<https://github.com/acme/widgets/pull/42|acme/widgets#42> (@emmahsax):* Add widget support\n> *@reviewer1* commented: I like this!"
 	if env.sent[0] != want {
 		t.Errorf("notification text = %q, want %q", env.sent[0], want)
 	}
@@ -219,7 +219,7 @@ func TestHandle_PullRequestReviewComment_AuthoredAndSubscribed(t *testing.T) {
 	if len(env.sent) != 1 {
 		t.Fatalf("expected 1 notification, got %d: %v", len(env.sent), env.sent)
 	}
-	want := "*<https://github.com/acme/widgets/pull/42|acme/widgets#42> (@emmahsax):* Add widget support\n> *@reviewer1 commented:* nit: rename this"
+	want := "*<https://github.com/acme/widgets/pull/42|acme/widgets#42> (@emmahsax):* Add widget support\n> *@reviewer1* commented: nit: rename this"
 	if env.sent[0] != want {
 		t.Errorf("notification text = %q, want %q", env.sent[0], want)
 	}
@@ -370,9 +370,79 @@ func TestHandle_PullRequestReview_Commented(t *testing.T) {
 	if len(env.sent) != 1 {
 		t.Fatalf("expected 1 notification, got %d: %v", len(env.sent), env.sent)
 	}
-	want := "*<https://github.com/acme/widgets/pull/42|acme/widgets#42> (@emmahsax):* Add widget support\n> *@reviewer1 commented:* Left some notes"
+	want := "*<https://github.com/acme/widgets/pull/42|acme/widgets#42> (@emmahsax):* Add widget support\n> *@reviewer1* commented: Left some notes"
 	if env.sent[0] != want {
 		t.Errorf("notification text = %q, want %q", env.sent[0], want)
+	}
+}
+
+// A "commented" review with no summary text is the wrapper GitHub creates
+// when someone adds inline comments without also writing a review summary
+// — those inline comments already get their own pull_request_review_comment
+// notifications, so this bare wrapper must not also notify.
+func TestHandle_PullRequestReview_CommentedWithEmptyBodySuppressed(t *testing.T) {
+	pr := githubapp.PullRequest{Number: 42, Draft: false, Author: githubapp.User{Login: "emmahsax"}}
+	env := newTestEnv(t, pr, nil, nil, nil, nil)
+
+	body := []byte(`{
+		"action": "submitted",
+		"review": {"state": "commented", "user": {"login": "reviewer1"}, "body": ""},
+		"pull_request": {"number": 42, "draft": false, "user": {"login": "emmahsax"}},
+		"repository": {"name": "widgets", "owner": {"login": "acme"}},
+		"installation": {"id": 1},
+		"sender": {"login": "reviewer1"}
+	}`)
+
+	if err := env.handler.Handle(context.Background(), "pull_request_review", sign(testSecret, body), body); err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if len(env.sent) != 0 {
+		t.Errorf("expected no notification for a contentless 'commented' review, got %v", env.sent)
+	}
+}
+
+// A whitespace-only body must be treated the same as truly empty.
+func TestHandle_PullRequestReview_CommentedWithWhitespaceOnlyBodySuppressed(t *testing.T) {
+	pr := githubapp.PullRequest{Number: 42, Draft: false, Author: githubapp.User{Login: "emmahsax"}}
+	env := newTestEnv(t, pr, nil, nil, nil, nil)
+
+	body := []byte(`{
+		"action": "submitted",
+		"review": {"state": "commented", "user": {"login": "reviewer1"}, "body": "  \n  "},
+		"pull_request": {"number": 42, "draft": false, "user": {"login": "emmahsax"}},
+		"repository": {"name": "widgets", "owner": {"login": "acme"}},
+		"installation": {"id": 1},
+		"sender": {"login": "reviewer1"}
+	}`)
+
+	if err := env.handler.Handle(context.Background(), "pull_request_review", sign(testSecret, body), body); err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if len(env.sent) != 0 {
+		t.Errorf("expected no notification for a whitespace-only 'commented' review, got %v", env.sent)
+	}
+}
+
+// Unlike "commented", an empty body on "approved"/"changes_requested" must
+// still notify — the verdict itself is the content.
+func TestHandle_PullRequestReview_ApprovedWithEmptyBodyStillNotifies(t *testing.T) {
+	pr := githubapp.PullRequest{Number: 42, Draft: false, Author: githubapp.User{Login: "emmahsax"}}
+	env := newTestEnv(t, pr, nil, nil, nil, nil)
+
+	body := []byte(`{
+		"action": "submitted",
+		"review": {"state": "approved", "user": {"login": "reviewer1"}, "body": ""},
+		"pull_request": {"number": 42, "draft": false, "user": {"login": "emmahsax"}},
+		"repository": {"name": "widgets", "owner": {"login": "acme"}},
+		"installation": {"id": 1},
+		"sender": {"login": "reviewer1"}
+	}`)
+
+	if err := env.handler.Handle(context.Background(), "pull_request_review", sign(testSecret, body), body); err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if len(env.sent) != 1 {
+		t.Fatalf("expected 1 notification for an approval even with no body, got %d: %v", len(env.sent), env.sent)
 	}
 }
 
@@ -471,6 +541,46 @@ func TestHandle_PullRequest_LabeledDraftSuppressed(t *testing.T) {
 	}
 	if len(env.sent) != 0 {
 		t.Errorf("expected no notification for a labeled draft PR, got %v", env.sent)
+	}
+}
+
+func TestHandle_PullRequest_Unlabeled(t *testing.T) {
+	pr := githubapp.PullRequest{Number: 42, Draft: false, Author: githubapp.User{Login: "emmahsax"}}
+	env := newTestEnv(t, pr, nil, nil, nil, nil)
+
+	body := []byte(`{
+		"action": "unlabeled",
+		"label": {"name": "needs-review"},
+		"pull_request": {"number": 42, "draft": false, "user": {"login": "emmahsax"}},
+		"repository": {"name": "widgets", "owner": {"login": "acme"}},
+		"installation": {"id": 1}
+	}`)
+
+	if err := env.handler.Handle(context.Background(), "pull_request", sign(testSecret, body), body); err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if len(env.sent) != 1 {
+		t.Fatalf("expected 1 notification for unlabeled PR, got %d: %v", len(env.sent), env.sent)
+	}
+}
+
+func TestHandle_PullRequest_UnlabeledDraftSuppressed(t *testing.T) {
+	pr := githubapp.PullRequest{Number: 42, Draft: true, Author: githubapp.User{Login: "emmahsax"}}
+	env := newTestEnv(t, pr, nil, nil, nil, nil)
+
+	body := []byte(`{
+		"action": "unlabeled",
+		"label": {"name": "needs-review"},
+		"pull_request": {"number": 42, "draft": true, "user": {"login": "emmahsax"}},
+		"repository": {"name": "widgets", "owner": {"login": "acme"}},
+		"installation": {"id": 1}
+	}`)
+
+	if err := env.handler.Handle(context.Background(), "pull_request", sign(testSecret, body), body); err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if len(env.sent) != 0 {
+		t.Errorf("expected no notification for an unlabeled draft PR, got %v", env.sent)
 	}
 }
 
@@ -632,7 +742,7 @@ func TestNotify_Threading_RootHasLinkAndReplyDoesNot(t *testing.T) {
 	if strings.Contains(firstReply.text, "http") {
 		t.Errorf("expected threaded reply to omit the PR link, got %q", firstReply.text)
 	}
-	if firstReply.text != "*@reviewer1 commented:* first" {
+	if firstReply.text != "*@reviewer1* commented: first" {
 		t.Errorf("first reply text = %q", firstReply.text)
 	}
 
@@ -640,7 +750,7 @@ func TestNotify_Threading_RootHasLinkAndReplyDoesNot(t *testing.T) {
 	if secondReply.threadTS != "1000.0001" {
 		t.Errorf("expected second reply to thread against the same header ts, got %q", secondReply.threadTS)
 	}
-	if secondReply.text != "*@reviewer2 commented:* second" {
+	if secondReply.text != "*@reviewer2* commented: second" {
 		t.Errorf("second reply text = %q", secondReply.text)
 	}
 }

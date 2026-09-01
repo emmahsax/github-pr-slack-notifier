@@ -1,6 +1,6 @@
 # GitHub PR → Slack Notifier
 
-A project designed to provide Slack notifications when GitHub PRs change: get pinged in Slack when a pull request you're **"subscribed"** to gets a comment, an approval, a changes-requested review, a merge, or a new label — but only for PRs that are ready for review (not draft), and only when you took an explicit prior action on that PR (authored it, pushed a commit, reviewed it, or commented on it). Being requested for review or @mentioned does *not* count as "subscribed".
+A project designed to provide Slack notifications when GitHub PRs change: get pinged in Slack when a pull request you're **"subscribed"** to gets a comment, an approval, a changes-requested review, a merge, or a label added/removed — but only for PRs that are ready for review (not draft), and only when you took an explicit prior action on that PR (authored it, pushed a commit, reviewed it, or commented on it). Being requested for review or @mentioned does *not* count as "subscribed".
 
 Full requirements and design rationale: [`spec/spec-design-pr-subscription-notifier.md`](spec/spec-design-pr-subscription-notifier.md).
 
@@ -10,13 +10,13 @@ A GitHub App (registered under your **personal** GitHub account) delivers webhoo
 
 Registering the App under your own account (not a GH org) means you can suspend or uninstall it yourself at any time, independent of your org membership — a real kill switch if you're ever offboarded without a chance to do it yourself.
 
-With bot-token delivery, all of a PR's notifications are grouped into a single Slack thread: the first time a PR gets a notification-worthy event, the bot posts a generic header message (`*owner/repo#number (@author):* PR title` — bold up to the colon, title plain) to start the thread, then posts the actual event as a plain reply underneath it (`*@sender action:* detail`, same bold-up-to-colon style); every later event for that same PR replies into that same thread, and the header is posted only once (see "Notes and known limitations" for what that means if the PR is later renamed). This needs a small DynamoDB table to remember each PR's thread timestamp across Lambda invocations.
+With bot-token delivery, all of a PR's notifications are grouped into a single Slack thread: the first time a PR gets a notification-worthy event, the bot posts a generic header message (`*owner/repo#number (@author):* PR title` — bold up to the colon, title plain) to start the thread, then posts the actual event as a plain reply underneath it (`*@sender* action: detail` — only the `@sender` mention is bold); every later event for that same PR replies into that same thread, and the header is posted only once (see "Notes and known limitations" for what that means if the PR is later renamed). This needs a small DynamoDB table to remember each PR's thread timestamp across Lambda invocations.
 
 Incoming-webhook delivery can't thread (Slack's incoming webhooks never return a message timestamp to reply against), so every notification is a single flat message with the same header text as the first line and the event blockquoted underneath, e.g. (rendered in Slack — `*text*` is mrkdwn bold):
 
 ```
 *my-org/my-repo#1299 (@emmahsax):* Add widget support
-> *@reviewer1 commented:* Looks good to me
+> *@reviewer1* commented: Looks good to me
 ```
 
 ## Repo layout
