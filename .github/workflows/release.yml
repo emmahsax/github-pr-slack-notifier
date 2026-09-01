@@ -18,9 +18,7 @@ jobs:
     with:
       build_command: task build
       files: |
-        dist/bootstrap
         dist/lambda.zip
-        dist/LICENSE.md
       go_version: 1.26
       tag_name: ${{ inputs.tag_name }}
       upload: true
