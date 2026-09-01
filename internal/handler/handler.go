@@ -134,7 +134,7 @@ func (h *Handler) handleIssueComment(ctx context.Context, body []byte) error {
 		return nil
 	}
 
-	return h.notify(ctx, evt.Repository.Owner.Login, evt.Repository.Name, pr, evt.Sender.Login, "commented", preview(evt.Comment.Body))
+	return h.notify(ctx, evt.Repository.Owner.Login, evt.Repository.Name, pr, evt.Sender.Login, "commented", preview(evt.Comment.Body), evt.Comment.HTMLURL)
 }
 
 // handlePullRequestReviewComment handles inline comments on a specific line
@@ -171,7 +171,7 @@ func (h *Handler) handlePullRequestReviewComment(ctx context.Context, body []byt
 		return nil
 	}
 
-	return h.notify(ctx, evt.Repository.Owner.Login, evt.Repository.Name, pr, evt.Sender.Login, "commented", preview(evt.Comment.Body))
+	return h.notify(ctx, evt.Repository.Owner.Login, evt.Repository.Name, pr, evt.Sender.Login, "commented", preview(evt.Comment.Body), evt.Comment.HTMLURL)
 }
 
 func (h *Handler) handlePullRequestReview(ctx context.Context, body []byte) error {
@@ -228,7 +228,7 @@ func (h *Handler) handlePullRequestReview(ctx context.Context, body []byte) erro
 		return nil
 	}
 
-	return h.notify(ctx, evt.Repository.Owner.Login, evt.Repository.Name, pr, evt.Sender.Login, verb, detail)
+	return h.notify(ctx, evt.Repository.Owner.Login, evt.Repository.Name, pr, evt.Sender.Login, verb, detail, evt.Review.HTMLURL)
 }
 
 func (h *Handler) handlePullRequest(ctx context.Context, body []byte) error {
@@ -280,7 +280,7 @@ func (h *Handler) handlePullRequest(ctx context.Context, body []byte) error {
 		return nil
 	}
 
-	return h.notify(ctx, evt.Repository.Owner.Login, evt.Repository.Name, pr, evt.Sender.Login, verb, "")
+	return h.notify(ctx, evt.Repository.Owner.Login, evt.Repository.Name, pr, evt.Sender.Login, verb, "", "")
 }
 
 // notify sends "@senderLogin verb[: detail]" to Slack, grouping it into the
@@ -294,14 +294,21 @@ func (h *Handler) handlePullRequest(ctx context.Context, body []byte) error {
 //
 // verb is always present ("commented", "approved the PR", ...); detail is
 // the optional freeform comment/review body preview. Only "@sender" is
-// bold; the verb and detail are always plain text.
-func (h *Handler) notify(ctx context.Context, owner, repo string, pr *githubapp.PullRequest, senderLogin, verb, detail string) error {
+// bold; the verb and detail are always plain text. url is the GitHub
+// permalink to the specific comment/review, when the event carries one
+// (comments and reviews always do; merges and label changes never do) — if
+// present, verb is rendered as a link to it.
+func (h *Handler) notify(ctx context.Context, owner, repo string, pr *githubapp.PullRequest, senderLogin, verb, detail, url string) error {
 	header := buildHeader(owner, repo, pr)
+	action := verb
+	if url != "" {
+		action = fmt.Sprintf("<%s|%s>", url, verb)
+	}
 	var actionLine string
 	if detail != "" {
-		actionLine = fmt.Sprintf("*@%s* %s: %s", senderLogin, verb, detail)
+		actionLine = fmt.Sprintf("*@%s* %s: %s", senderLogin, action, detail)
 	} else {
-		actionLine = fmt.Sprintf("*@%s* %s", senderLogin, verb)
+		actionLine = fmt.Sprintf("*@%s* %s", senderLogin, action)
 	}
 
 	if h.threadStore == nil {

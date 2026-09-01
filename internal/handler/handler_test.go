@@ -99,7 +99,7 @@ func TestHandle_IssueComment_AuthoredAndSubscribed(t *testing.T) {
 	body := []byte(`{
 		"action": "created",
 		"issue": {"number": 42, "pull_request": {}},
-		"comment": {"user": {"login": "reviewer1"}, "body": "I like this!"},
+		"comment": {"user": {"login": "reviewer1"}, "body": "I like this!", "html_url": "https://github.com/acme/widgets/pull/42#issuecomment-999"},
 		"repository": {"name": "widgets", "owner": {"login": "acme"}},
 		"installation": {"id": 1},
 		"sender": {"login": "reviewer1"}
@@ -111,7 +111,7 @@ func TestHandle_IssueComment_AuthoredAndSubscribed(t *testing.T) {
 	if len(env.sent) != 1 {
 		t.Fatalf("expected 1 notification, got %d: %v", len(env.sent), env.sent)
 	}
-	want := "*<https://github.com/acme/widgets/pull/42|acme/widgets#42> (@emmahsax):* Add widget support\n> *@reviewer1* commented: I like this!"
+	want := "*<https://github.com/acme/widgets/pull/42|acme/widgets#42> (@emmahsax):* Add widget support\n> *@reviewer1* <https://github.com/acme/widgets/pull/42#issuecomment-999|commented>: I like this!"
 	if env.sent[0] != want {
 		t.Errorf("notification text = %q, want %q", env.sent[0], want)
 	}
@@ -206,7 +206,7 @@ func TestHandle_PullRequestReviewComment_AuthoredAndSubscribed(t *testing.T) {
 
 	body := []byte(`{
 		"action": "created",
-		"comment": {"user": {"login": "reviewer1"}, "body": "nit: rename this"},
+		"comment": {"user": {"login": "reviewer1"}, "body": "nit: rename this", "html_url": "https://github.com/acme/widgets/pull/42#discussion_r123456"},
 		"pull_request": {"number": 42, "draft": false, "title": "Add widget support", "user": {"login": "emmahsax"}, "html_url": "https://github.com/acme/widgets/pull/42"},
 		"repository": {"name": "widgets", "owner": {"login": "acme"}},
 		"installation": {"id": 1},
@@ -219,7 +219,7 @@ func TestHandle_PullRequestReviewComment_AuthoredAndSubscribed(t *testing.T) {
 	if len(env.sent) != 1 {
 		t.Fatalf("expected 1 notification, got %d: %v", len(env.sent), env.sent)
 	}
-	want := "*<https://github.com/acme/widgets/pull/42|acme/widgets#42> (@emmahsax):* Add widget support\n> *@reviewer1* commented: nit: rename this"
+	want := "*<https://github.com/acme/widgets/pull/42|acme/widgets#42> (@emmahsax):* Add widget support\n> *@reviewer1* <https://github.com/acme/widgets/pull/42#discussion_r123456|commented>: nit: rename this"
 	if env.sent[0] != want {
 		t.Errorf("notification text = %q, want %q", env.sent[0], want)
 	}
@@ -357,7 +357,7 @@ func TestHandle_PullRequestReview_Commented(t *testing.T) {
 
 	body := []byte(`{
 		"action": "submitted",
-		"review": {"state": "commented", "user": {"login": "reviewer1"}, "body": "Left some notes"},
+		"review": {"state": "commented", "user": {"login": "reviewer1"}, "body": "Left some notes", "html_url": "https://github.com/acme/widgets/pull/42#pullrequestreview-555"},
 		"pull_request": {"number": 42, "draft": false, "user": {"login": "emmahsax"}, "html_url": "https://github.com/acme/widgets/pull/42", "title": "Add widget support"},
 		"repository": {"name": "widgets", "owner": {"login": "acme"}},
 		"installation": {"id": 1},
@@ -370,7 +370,7 @@ func TestHandle_PullRequestReview_Commented(t *testing.T) {
 	if len(env.sent) != 1 {
 		t.Fatalf("expected 1 notification, got %d: %v", len(env.sent), env.sent)
 	}
-	want := "*<https://github.com/acme/widgets/pull/42|acme/widgets#42> (@emmahsax):* Add widget support\n> *@reviewer1* commented: Left some notes"
+	want := "*<https://github.com/acme/widgets/pull/42|acme/widgets#42> (@emmahsax):* Add widget support\n> *@reviewer1* <https://github.com/acme/widgets/pull/42#pullrequestreview-555|commented>: Left some notes"
 	if env.sent[0] != want {
 		t.Errorf("notification text = %q, want %q", env.sent[0], want)
 	}
@@ -466,13 +466,15 @@ func TestHandle_PullRequestReview_OwnReviewSuppressed(t *testing.T) {
 }
 
 func TestHandle_PullRequest_Merged_NotifiesAuthorRegardlessOfMerger(t *testing.T) {
-	env := newTestEnv(t, githubapp.PullRequest{}, nil, nil, nil, nil)
+	pr := githubapp.PullRequest{Number: 42, Draft: false, Author: githubapp.User{Login: "emmahsax"}, HTMLURL: "https://github.com/acme/widgets/pull/42", Title: "Add widget support"}
+	env := newTestEnv(t, pr, nil, nil, nil, nil)
 
 	body := []byte(`{
 		"action": "closed",
-		"pull_request": {"number": 42, "draft": false, "merged": true, "user": {"login": "emmahsax"}},
+		"pull_request": {"number": 42, "draft": false, "merged": true, "user": {"login": "emmahsax"}, "html_url": "https://github.com/acme/widgets/pull/42", "title": "Add widget support"},
 		"repository": {"name": "widgets", "owner": {"login": "acme"}},
-		"installation": {"id": 1}
+		"installation": {"id": 1},
+		"sender": {"login": "reviewer1"}
 	}`)
 
 	if err := env.handler.Handle(context.Background(), "pull_request", sign(testSecret, body), body); err != nil {
@@ -480,6 +482,11 @@ func TestHandle_PullRequest_Merged_NotifiesAuthorRegardlessOfMerger(t *testing.T
 	}
 	if len(env.sent) != 1 {
 		t.Fatalf("expected 1 notification for merged PR, got %d: %v", len(env.sent), env.sent)
+	}
+	// No html_url exists for a merge event, so the verb must stay plain text, not a link.
+	want := "*<https://github.com/acme/widgets/pull/42|acme/widgets#42> (@emmahsax):* Add widget support\n> *@reviewer1* merged the PR"
+	if env.sent[0] != want {
+		t.Errorf("notification text = %q, want %q", env.sent[0], want)
 	}
 }
 

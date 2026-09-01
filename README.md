@@ -85,7 +85,7 @@ data "aws_ssm_parameter" "slack_credential" {
 }
 
 module "pr_slack_notifier" {
-  source = "git::https://github.com/emmahsax/github-pr-slack-notifier.git//terraform/module?ref=v1.0.0"
+  source = "git::https://github.com/emmahsax/github-pr-slack-notifier.git//terraform/module?ref=v0.0.1"
 
   github_app_id           = "123456"
   github_app_private_key  = data.aws_ssm_parameter.github_app_private_key.value

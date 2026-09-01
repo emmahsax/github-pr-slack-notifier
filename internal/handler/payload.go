@@ -25,8 +25,9 @@ type IssueCommentEvent struct {
 		PullRequest *struct{} `json:"pull_request"`
 	} `json:"issue"`
 	Comment struct {
-		User githubapp.User `json:"user"`
-		Body string         `json:"body"`
+		User    githubapp.User `json:"user"`
+		Body    string         `json:"body"`
+		HTMLURL string         `json:"html_url"`
 	} `json:"comment"`
 	Repository   Repository     `json:"repository"`
 	Installation Installation   `json:"installation"`
@@ -53,8 +54,9 @@ type PullRequestReviewEvent struct {
 type PullRequestReviewCommentEvent struct {
 	Action  string `json:"action"`
 	Comment struct {
-		User githubapp.User `json:"user"`
-		Body string         `json:"body"`
+		User    githubapp.User `json:"user"`
+		Body    string         `json:"body"`
+		HTMLURL string         `json:"html_url"`
 	} `json:"comment"`
 	PullRequest  githubapp.PullRequest `json:"pull_request"`
 	Repository   Repository            `json:"repository"`

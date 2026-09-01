@@ -10,7 +10,8 @@ tasks:
     desc: Build the Lambda deployment package (dist/lambda.zip)
     cmds:
       - GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -o dist/bootstrap ./cmd/lambda
-      - cd dist && zip -q -X lambda.zip bootstrap
+      - cp LICENSE.md dist/LICENSE.md
+      - cd dist && zip -q -X lambda.zip bootstrap LICENSE.md
 
   test:
     desc: Run the Go test suite

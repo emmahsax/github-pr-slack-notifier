@@ -32,9 +32,10 @@ type Commit struct {
 // notification state. State is one of "approved", "changes_requested",
 // "commented", "dismissed", or "pending".
 type Review struct {
-	User  User   `json:"user"`
-	State string `json:"state"`
-	Body  string `json:"body"`
+	User    User   `json:"user"`
+	State   string `json:"state"`
+	Body    string `json:"body"`
+	HTMLURL string `json:"html_url"`
 }
 
 // Comment is the subset of an issue comment or PR review comment needed to
