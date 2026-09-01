@@ -33,6 +33,15 @@ resource "aws_lambda_function" "this" {
       ResourceType = "LambdaFunction"
     }
   )
+
+  # filename's literal string value differs across machines (different local
+  # clone paths, or the relative default when no override is given at all)
+  # even when the code itself hasn't changed. source_code_hash is the actual
+  # signal for whether a real code update is needed; ignoring filename here
+  # stops that harmless path drift from ever showing up as a spurious diff.
+  lifecycle {
+    ignore_changes = [filename]
+  }
 }
 
 resource "aws_lambda_function_url" "this" {
