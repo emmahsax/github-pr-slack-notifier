@@ -1,0 +1,11 @@
+github_app_id          = "123456"
+github_org_allowlist   = ["my-org"]
+github_username        = "emmahsax"
+slack_delivery_method  = "bot_token"
+slack_target           = "C0123456789"
+
+# Before applying, make sure these SSM SecureString parameters exist in the
+# target account (see main.tf for the exact names this harness expects):
+#   /github-pr-slack-notifier/<github_username>/github-app-private-key
+#   /github-pr-slack-notifier/<github_username>/github-webhook-secret
+#   /github-pr-slack-notifier/<github_username>/slack-credential
