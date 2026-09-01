@@ -1,0 +1,17 @@
+name: GitLeaks
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  gitleaks:
+    permissions:
+      contents: read
+    uses: emmahsax/github-actions/.github/workflows/gitleaks.yml@main
+    with:
+      gitleaks_config_paths: "[
+        'go.sum',
+      ]"
