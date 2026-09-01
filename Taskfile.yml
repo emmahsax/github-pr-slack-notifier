@@ -19,6 +19,12 @@ tasks:
     cmds:
       - rm -rf dist
 
+  format:
+    desc: Run gofmt on all Go source files
+    cmds:
+      - go fmt ./...
+      - terraform fmt --recursive
+
   test:
     desc: Run the Go test suite
     cmds:

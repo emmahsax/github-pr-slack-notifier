@@ -17,9 +17,9 @@ resource "aws_lambda_function" "this" {
     }
   }
 
-  filename         = var.lambda_zip_path
-  function_name    = local.lambda_function_name
-  handler          = "bootstrap"
+  filename      = var.lambda_zip_path
+  function_name = local.lambda_function_name
+  handler       = "bootstrap"
 
   # filename's literal string value differs across machines (different local
   # clone paths, or the relative default when no override is given at all)
