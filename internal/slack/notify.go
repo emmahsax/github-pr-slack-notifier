@@ -149,7 +149,7 @@ func (n *Notifier) sendViaBotToken(ctx context.Context, text, threadTS string) (
 }
 
 // Update edits a previously sent message's text in place via chat.update
-// (FUT-002). Only meaningful for bot-token delivery: Slack incoming
+// (REQ-018). Only meaningful for bot-token delivery: Slack incoming
 // webhooks have no concept of editing a message they sent, since the
 // webhook response never identifies the message. ts is the target
 // message's own timestamp (for a thread header, that's the same value

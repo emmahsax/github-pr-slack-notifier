@@ -618,7 +618,7 @@ func TestNotify_Threading_RootHasLinkAndReplyDoesNot(t *testing.T) {
 	}
 }
 
-// --- title-change thread header refresh (FUT-002) ---
+// --- title-change thread header refresh (REQ-018) ---
 
 func TestHandle_PullRequestTitleEdited_UpdatesExistingThreadHeader(t *testing.T) {
 	pr := githubapp.PullRequest{Number: 42, Draft: false, Author: githubapp.User{Login: "emmahsax"}, HTMLURL: "https://github.com/acme/widgets/pull/42", Title: "Add widget support"}

@@ -2,10 +2,12 @@ name: Test
 
 on:
   pull_request:
+    types: [opened, ready_for_review, reopened, synchronize]
   workflow_dispatch:
 
 jobs:
   setup:
+    if: ${{ !github.event.pull_request.draft }}
     outputs:
       branch: ${{ steps.set_branch_variable.outputs.branch }}
     permissions: {}
@@ -24,3 +26,31 @@ jobs:
       branch: ${{ needs.setup.outputs.branch }}
       build_command: task build
       go_version: 1.26
+
+  terraform-validate:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        directory: [ terraform/module, terraform/testing ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "~1.15.8"
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -diff
+        working-directory: ${{ matrix.directory }}
+
+      - name: Terraform Init
+        run: terraform init -backend=false
+        working-directory: ${{ matrix.directory }}
+
+      - name: Terraform Validate
+        run: terraform validate
+        working-directory: ${{ matrix.directory }}

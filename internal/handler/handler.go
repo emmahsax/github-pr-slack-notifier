@@ -234,7 +234,7 @@ func (h *Handler) handlePullRequest(ctx context.Context, body []byte) error {
 	}
 
 	if evt.Action == "edited" && evt.Changes.Title != nil {
-		// FUT-002: keep an existing thread header's title in sync. Not a
+		// REQ-018: keep an existing thread header's title in sync. Not a
 		// notification in its own right — no subscription check, no new
 		// message — so it's handled entirely separately from the
 		// action-determining switch below.
@@ -272,14 +272,13 @@ func (h *Handler) handlePullRequest(ctx context.Context, body []byte) error {
 }
 
 // notify sends "@senderLogin verb[: detail]" to Slack, grouping it into the
-// PR's thread (REQ-015) when threading is available. The thread root is
-// always a generic header identifying the PR ("owner/repo#number (@author):
-// Title") — never tied to whichever event happened to arrive first, and
-// never re-sent once posted — so every real notification, including the
-// very first one for a PR, is a plain threaded reply under that header.
-// Delivery methods that can't thread (incoming webhook) have no thread
-// store at all, so every message they send is flat: the same header text
-// plus the action as a blockquoted line underneath, in one message.
+// PR's thread (REQ-015) when threading is available. The thread root is a
+// generic header identifying the PR ("owner/repo#number (@author): Title"),
+// posted once; every real notification for that PR, including the very
+// first one, is a plain threaded reply under that header. Delivery methods
+// that can't thread (incoming webhook) have no thread store at all, so
+// every message they send is flat: the same header text plus the action as
+// a blockquoted line underneath, in one message.
 //
 // verb is always present ("commented", "approved this PR", ...); detail is
 // the optional freeform comment/review body preview. Only "@sender verb:"
@@ -335,7 +334,7 @@ func (h *Handler) threadOrHeaderTS(ctx context.Context, owner, repo string, pr *
 	return result.ThreadTS, nil
 }
 
-// refreshThreadHeader implements FUT-002: when a PR's title changes, update
+// refreshThreadHeader implements REQ-018: when a PR's title changes, update
 // its thread header to match, if a thread already exists for it. If no
 // thread exists yet — the PR was never subscribed-and-notified, or this
 // deployment uses incoming-webhook delivery, which has no headers to keep
