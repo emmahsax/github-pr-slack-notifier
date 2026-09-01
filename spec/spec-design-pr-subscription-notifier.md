@@ -76,7 +76,7 @@ This document specifies the requirements, subscription/notification semantics, a
 
 - **SEC-001**: The GitHub App MUST be registered under the user's personal GitHub account, not any organization account, so that the user retains independent control (suspend/uninstall) regardless of their org membership status.
 - **SEC-002**: Incoming webhook requests to the Lambda Function URL MUST be authenticated by verifying the GitHub webhook HMAC signature (`X-Hub-Signature-256`) before any processing.
-- **SEC-003**: The deployment into any shared/employer-owned AWS account MUST be discoverable and destroyable by a third party (see GUD-001) without requiring the user's involvement.
+- **SEC-003**: The deployment into any shared/employer-owned AWS account MUST be discoverable and destroyable by a third party (see GUD-004) without requiring the user's involvement.
 - **SEC-004**: The GitHub App MUST request the minimum permission scope needed (read-only access to pull requests, issues/comments, and repository metadata) and subscribe only to the webhook events needed (`pull_request`, `pull_request_review`, `pull_request_review_comment`, `issue_comment`). Omitting `pull_request_review_comment` specifically means GitHub never delivers inline diff comments (`#discussion_r...` URLs) or their thread replies at all — not a processing bug, a missing subscription; there is no delivery to debug in the GitHub App's "Recent Deliveries" log when this happens, which is itself the diagnostic signal.
 
 ### Ownership & Repo Structure
@@ -204,6 +204,7 @@ Per GUD-005, secret values (`github_app_private_key`, `github_webhook_secret`, `
 - **AC-016**: Given a PR with no existing thread (regardless of delivery method), When the PR's title is edited, Then nothing is sent to Slack at all — no error, no message.
 - **AC-017**: Given a PR is edited but the title itself did not change (e.g., only the base branch changed), When the webhook arrives, Then no header update and no notification occurs.
 - **AC-018**: Given a non-draft PR the user is subscribed to, When someone else posts an inline diff comment (`pull_request_review_comment`, `action: "created"`) — whether it's the first comment in a new review thread or a reply within an existing one — Then the user receives a Slack notification, formatted identically to an `issue_comment` notification.
+- **AC-019**: Given a non-draft PR the user is subscribed to, When someone else submits a review with state `"commented"` (CON-001), Then the user receives a Slack notification formatted the same way as a plain comment (`@sender commented: <body preview>`), not a distinct "approved"/"changes requested" wording and not silently ignored.
 
 ## 6. Test Automation Strategy
 
@@ -238,6 +239,7 @@ Per GUD-005, secret values (`github_app_private_key`, `github_webhook_secret`, `
 - **INF-001**: AWS Lambda — hosts the event handler; must support a Function URL.
 - **INF-002**: A secrets backend of the consumer's choosing (e.g. AWS SSM Parameter Store `SecureString` parameters, or another Terraform-managed secret store) — resolves to the plaintext values the module's `github_app_private_key`, `github_webhook_secret`, and `slack_credential` inputs expect (GUD-005). Not a dependency of the module itself.
 - **INF-003**: Whatever existing Terraform tooling and state backend a consumer already uses — needed only for the thin consumer block, not for the module itself.
+- **INF-004**: AWS DynamoDB (on-demand billing) — required only for bot-token delivery, to persist PR → Slack-thread-timestamp state across Lambda invocations (REQ-016). Not created at all for incoming-webhook delivery, which has no thread state to persist.
 
 ### Data Dependencies
 - None beyond live GitHub API responses fetched per-event; no data warehousing or batch data dependency exists.

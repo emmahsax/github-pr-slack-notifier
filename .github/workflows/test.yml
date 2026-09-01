@@ -28,6 +28,7 @@ jobs:
       go_version: 1.26
 
   terraform-validate:
+    if: ${{ !github.event.pull_request.draft }}
     permissions:
       contents: read
     runs-on: ubuntu-latest

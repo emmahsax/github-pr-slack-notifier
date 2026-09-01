@@ -349,6 +349,33 @@ func TestHandle_PullRequestReview_Approved(t *testing.T) {
 	}
 }
 
+// CON-001: a review submitted with state "commented" is treated as
+// equivalent to a plain comment notification, not ignored.
+func TestHandle_PullRequestReview_Commented(t *testing.T) {
+	pr := githubapp.PullRequest{Number: 42, Draft: false, Author: githubapp.User{Login: "emmahsax"}, HTMLURL: "https://github.com/acme/widgets/pull/42", Title: "Add widget support"}
+	env := newTestEnv(t, pr, nil, nil, nil, nil)
+
+	body := []byte(`{
+		"action": "submitted",
+		"review": {"state": "commented", "user": {"login": "reviewer1"}, "body": "Left some notes"},
+		"pull_request": {"number": 42, "draft": false, "user": {"login": "emmahsax"}, "html_url": "https://github.com/acme/widgets/pull/42", "title": "Add widget support"},
+		"repository": {"name": "widgets", "owner": {"login": "acme"}},
+		"installation": {"id": 1},
+		"sender": {"login": "reviewer1"}
+	}`)
+
+	if err := env.handler.Handle(context.Background(), "pull_request_review", sign(testSecret, body), body); err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if len(env.sent) != 1 {
+		t.Fatalf("expected 1 notification, got %d: %v", len(env.sent), env.sent)
+	}
+	want := "*<https://github.com/acme/widgets/pull/42|acme/widgets#42> (@emmahsax):* Add widget support\n> *@reviewer1 commented:* Left some notes"
+	if env.sent[0] != want {
+		t.Errorf("notification text = %q, want %q", env.sent[0], want)
+	}
+}
+
 func TestHandle_PullRequestReview_OwnReviewSuppressed(t *testing.T) {
 	env := newTestEnv(t, githubapp.PullRequest{}, nil, nil, nil, nil)
 
