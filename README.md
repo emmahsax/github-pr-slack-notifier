@@ -92,8 +92,10 @@ module "pr_slack_notifier" {
   github_org_allowlist    = ["my-org"]
   github_username         = "emmahsax"
   github_webhook_secret   = data.aws_ssm_parameter.github_webhook_secret.value
-  # Wherever `task build` output landed or you downloaded the dist from
+
+  # Optional — see note below. Omit this entirely if you don't have a local build.
   lambda_zip_path         = "${path.module}/../../dist/lambda.zip"
+
   slack_credential        = data.aws_ssm_parameter.slack_credential.value
   slack_delivery_method   = "bot_token"
   slack_target            = "C0123456789"
@@ -102,11 +104,21 @@ module "pr_slack_notifier" {
 
 If your Terraform setup already manages secrets some other way (e.g. encrypted tfvars), skip the data sources and pass those values into the module directly instead.
 
+`lambda_zip_path` is **not required** for most people applying this module — it only matters to whoever is actually pushing a Lambda code update(s). If you leave it unset (or the path it resolves to doesn't exist locally), the module falls back to whatever code is already deployed and leaves the function's `filename` untouched (via `lifecycle.ignore_changes`), so `plan`/`apply` is a clean no-op. This means teammates who just need to `plan`/`apply` other parts of a shared consumer file — without ever running `task build` or downloading a release zip — can do so safely. Only set `lambda_zip_path` when you're the one deploying a real code change (pointing it at `task build`'s output or a downloaded release `lambda.zip`).
+
 The module auto-generates `Description`/`ManagedBy`/`Owner`/`Region` tags (defaulting to an auto-generated sentence, `"IAC"`, `github_username`, and `"us-east-2"` respectively), so a shared/employer account deployment is self-describing without hand-writing ownership prose. That's the whole point of deploying via a visible thin consumer block instead of running this somewhere only you can see: a teammate should be able to find and destroy it without your involvement. Override any of these by setting the same key in the single `tags` variable, e.g. `tags = { Owner = "someone-else", Environment = "Personal" }`. Every taggable resource also gets `Name` and `ResourceType` tags — these two are always accurate to the actual resource and can never be overridden via `tags`, unlike everything else.
 
 `function_name` defaults to `"github-pr-slack-notifier-<github_username>"` so multiple people's instances can coexist in one AWS account without colliding. Every other AWS resource name (Lambda function, IAM role, IAM policy, DynamoDB table) has its own override variable (`lambda_function_name`, `iam_role_name`, `thread_store_policy_name`, `thread_store_table_name`) that defaults to a name derived from `function_name` — dash-case for Lambda/DynamoDB, PascalCase for IAM — so the username flows through into the IAM names too by default. Pass any of them explicitly if you want something other than the default.
 
 After `terraform apply`, take the `function_url` output and set it as the GitHub App's webhook URL.
+
+### Testing changes
+
+To deploy Terraform based on your local repository (e.g. if you're making changes on the repository), you can pull a local source:
+
+```hcl
+source = "/path/to/github-pr-slack-notifier/terraform/module"
+```
 
 ## Kill switch
 
@@ -134,7 +146,7 @@ In practice: **effectively $0/month**, comfortably inside AWS's perpetual free t
 
 - The module takes secret values directly rather than reading from a specific backend, so it works the same whether your consumer resolves them from SSM, encrypted tfvars, or anywhere else. Whatever you pass in gets set as a plain Lambda environment variable — the Lambda's own IAM role never needs any secrets-backend read access — but those values will also land in Terraform state in plaintext, same as any other resource attribute. Restrict state storage access accordingly.
 - The Lambda Function URL has `authorization_type = "NONE"` (GitHub can't do AWS SigV4 auth) — the endpoint is intentionally public, and security is enforced entirely by the webhook HMAC signature check inside the handler.
-- `dist/lambda.zip` is gitignored, so it only exists on whichever machine last ran `task build`. The Terraform module falls back to whatever code is already deployed when it's missing, so `plan`/`apply` from anyone else is a silent no-op on this resource rather than an error. The one exception: the very first-ever `apply` of a fresh deployment must come from a machine that has actually built/downloaded the zip, since there's no existing function yet to fall back to.
+- `dist/lambda.zip` is gitignored, so it only exists on whichever machine last ran `task build`. When `lambda_zip_path` is missing or unset, the module falls back to whatever code is already deployed for `source_code_hash`, and `filename` itself is excluded from diffing (`lifecycle.ignore_changes`) so its value drifting between machines' local paths never matters — `plan`/`apply` from anyone else is a silent no-op on this resource rather than an error. The one exception: the very first-ever `apply` of a fresh deployment must come from a machine that has actually built/downloaded the zip, since there's no existing function yet to fall back to.
 - Bot-token delivery provisions a small DynamoDB table (pay-per-request, with a 90-day TTL so it doesn't grow unbounded) purely to remember which Slack thread each PR belongs to — this doesn't apply to the "no persistent database" framing elsewhere in this project, which is about subscription determination (still computed live off the GitHub API every time), not notification-thread bookkeeping.
 - Single-user only (v1): notifies exactly one GitHub username. See the spec's open questions for what multi-user support would require.
 - When a PR's title changes and a thread already exists for it (bot-token delivery), the thread's header is updated in place via `chat.update` — this needs no extra GitHub API call, since the new title is already in the `pull_request` webhook payload. If no thread exists yet, or delivery is incoming-webhook, this is a silent no-op. **With incoming-webhook delivery, previously sent messages are never rewritten.** Each flat message reflects whatever the title was at the moment *that* message was sent; renaming a PR does not go back and update earlier messages, it only means the *next* message will show the new title.
