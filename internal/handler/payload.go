@@ -43,6 +43,25 @@ type PullRequestReviewEvent struct {
 	Sender       githubapp.User        `json:"sender"`
 }
 
+// PullRequestReviewCommentEvent is the payload for the
+// "pull_request_review_comment" event — an inline comment on a specific
+// line of a PR's diff (GitHub's UI links to these via "#discussion_r..."
+// URLs, as opposed to "#issuecomment-..." for plain issue_comment). Unlike
+// IssueCommentEvent, the full PullRequest object is included directly, no
+// separate fetch needed. This covers both a thread's first inline comment
+// and any replies within that thread — GitHub delivers both the same way.
+type PullRequestReviewCommentEvent struct {
+	Action  string `json:"action"`
+	Comment struct {
+		User githubapp.User `json:"user"`
+		Body string         `json:"body"`
+	} `json:"comment"`
+	PullRequest  githubapp.PullRequest `json:"pull_request"`
+	Repository   Repository            `json:"repository"`
+	Installation Installation          `json:"installation"`
+	Sender       githubapp.User        `json:"sender"`
+}
+
 // PullRequestEvent is the payload for the "pull_request" event, covering
 // the "closed" (merge), "labeled", and "edited" actions this notifier
 // handles. Changes.Title is non-nil only when the title itself was part of

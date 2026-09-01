@@ -197,6 +197,139 @@ func TestHandle_IssueComment_OrgNotAllowlisted(t *testing.T) {
 	}
 }
 
+// --- pull_request_review_comment: inline diff comments, including replies
+// within a review-comment thread (GitHub delivers both the same way) ---
+
+func TestHandle_PullRequestReviewComment_AuthoredAndSubscribed(t *testing.T) {
+	pr := githubapp.PullRequest{Number: 42, Draft: false, Author: githubapp.User{Login: "emmahsax"}, HTMLURL: "https://github.com/acme/widgets/pull/42", Title: "Add widget support"}
+	env := newTestEnv(t, pr, nil, nil, nil, nil)
+
+	body := []byte(`{
+		"action": "created",
+		"comment": {"user": {"login": "reviewer1"}, "body": "nit: rename this"},
+		"pull_request": {"number": 42, "draft": false, "title": "Add widget support", "user": {"login": "emmahsax"}, "html_url": "https://github.com/acme/widgets/pull/42"},
+		"repository": {"name": "widgets", "owner": {"login": "acme"}},
+		"installation": {"id": 1},
+		"sender": {"login": "reviewer1"}
+	}`)
+
+	if err := env.handler.Handle(context.Background(), "pull_request_review_comment", sign(testSecret, body), body); err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if len(env.sent) != 1 {
+		t.Fatalf("expected 1 notification, got %d: %v", len(env.sent), env.sent)
+	}
+	want := "*<https://github.com/acme/widgets/pull/42|acme/widgets#42> (@emmahsax):* Add widget support\n> *@reviewer1 commented:* nit: rename this"
+	if env.sent[0] != want {
+		t.Errorf("notification text = %q, want %q", env.sent[0], want)
+	}
+}
+
+func TestHandle_PullRequestReviewComment_DraftPRSuppressed(t *testing.T) {
+	pr := githubapp.PullRequest{Number: 42, Draft: false, Author: githubapp.User{Login: "emmahsax"}}
+	env := newTestEnv(t, pr, nil, nil, nil, nil)
+
+	body := []byte(`{
+		"action": "created",
+		"comment": {"user": {"login": "reviewer1"}, "body": "nit"},
+		"pull_request": {"number": 42, "draft": true, "user": {"login": "emmahsax"}},
+		"repository": {"name": "widgets", "owner": {"login": "acme"}},
+		"installation": {"id": 1},
+		"sender": {"login": "reviewer1"}
+	}`)
+
+	if err := env.handler.Handle(context.Background(), "pull_request_review_comment", sign(testSecret, body), body); err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if len(env.sent) != 0 {
+		t.Errorf("expected no notification for draft PR, got %v", env.sent)
+	}
+}
+
+func TestHandle_PullRequestReviewComment_NotSubscribedSuppressed(t *testing.T) {
+	pr := githubapp.PullRequest{Number: 42, Draft: false, Author: githubapp.User{Login: "someone-else"}}
+	env := newTestEnv(t, pr, nil, nil, nil, nil)
+
+	body := []byte(`{
+		"action": "created",
+		"comment": {"user": {"login": "reviewer1"}, "body": "nit"},
+		"pull_request": {"number": 42, "draft": false, "user": {"login": "someone-else"}},
+		"repository": {"name": "widgets", "owner": {"login": "acme"}},
+		"installation": {"id": 1},
+		"sender": {"login": "reviewer1"}
+	}`)
+
+	if err := env.handler.Handle(context.Background(), "pull_request_review_comment", sign(testSecret, body), body); err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if len(env.sent) != 0 {
+		t.Errorf("expected no notification when not subscribed, got %v", env.sent)
+	}
+}
+
+func TestHandle_PullRequestReviewComment_OwnCommentSuppressed(t *testing.T) {
+	pr := githubapp.PullRequest{Number: 42, Draft: false, Author: githubapp.User{Login: "emmahsax"}}
+	env := newTestEnv(t, pr, nil, nil, nil, nil)
+
+	body := []byte(`{
+		"action": "created",
+		"comment": {"user": {"login": "emmahsax"}, "body": "nit"},
+		"pull_request": {"number": 42, "draft": false, "user": {"login": "emmahsax"}},
+		"repository": {"name": "widgets", "owner": {"login": "acme"}},
+		"installation": {"id": 1},
+		"sender": {"login": "emmahsax"}
+	}`)
+
+	if err := env.handler.Handle(context.Background(), "pull_request_review_comment", sign(testSecret, body), body); err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if len(env.sent) != 0 {
+		t.Errorf("expected no notification about your own comment, got %v", env.sent)
+	}
+}
+
+func TestHandle_PullRequestReviewComment_OrgNotAllowlisted(t *testing.T) {
+	pr := githubapp.PullRequest{Number: 42, Draft: false, Author: githubapp.User{Login: "emmahsax"}}
+	env := newTestEnv(t, pr, nil, nil, nil, nil)
+
+	body := []byte(`{
+		"action": "created",
+		"comment": {"user": {"login": "reviewer1"}, "body": "nit"},
+		"pull_request": {"number": 42, "draft": false, "user": {"login": "emmahsax"}},
+		"repository": {"name": "widgets", "owner": {"login": "other-org"}},
+		"installation": {"id": 1},
+		"sender": {"login": "reviewer1"}
+	}`)
+
+	if err := env.handler.Handle(context.Background(), "pull_request_review_comment", sign(testSecret, body), body); err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if len(env.sent) != 0 {
+		t.Errorf("expected no notification for a non-allowlisted org, got %v", env.sent)
+	}
+}
+
+func TestHandle_PullRequestReviewComment_NonCreatedActionIgnored(t *testing.T) {
+	pr := githubapp.PullRequest{Number: 42, Draft: false, Author: githubapp.User{Login: "emmahsax"}}
+	env := newTestEnv(t, pr, nil, nil, nil, nil)
+
+	body := []byte(`{
+		"action": "edited",
+		"comment": {"user": {"login": "reviewer1"}, "body": "nit (edited)"},
+		"pull_request": {"number": 42, "draft": false, "user": {"login": "emmahsax"}},
+		"repository": {"name": "widgets", "owner": {"login": "acme"}},
+		"installation": {"id": 1},
+		"sender": {"login": "reviewer1"}
+	}`)
+
+	if err := env.handler.Handle(context.Background(), "pull_request_review_comment", sign(testSecret, body), body); err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if len(env.sent) != 0 {
+		t.Errorf("expected no notification for a non-created action (e.g. edited), got %v", env.sent)
+	}
+}
+
 func TestHandle_PullRequestReview_Approved(t *testing.T) {
 	env := newTestEnv(t, githubapp.PullRequest{}, nil, nil, nil, nil)
 

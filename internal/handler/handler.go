@@ -88,6 +88,8 @@ func (h *Handler) Handle(ctx context.Context, eventType, signature string, body 
 		return h.handleIssueComment(ctx, body)
 	case "pull_request_review":
 		return h.handlePullRequestReview(ctx, body)
+	case "pull_request_review_comment":
+		return h.handlePullRequestReviewComment(ctx, body)
 	case "pull_request":
 		return h.handlePullRequest(ctx, body)
 	default:
@@ -124,6 +126,43 @@ func (h *Handler) handleIssueComment(ctx context.Context, body []byte) error {
 		return nil
 	}
 
+	subscribed, err := githubapp.IsSubscribed(ctx, client, evt.Repository.Owner.Login, evt.Repository.Name, pr, h.cfg.GitHubUsername)
+	if err != nil {
+		return err
+	}
+	if !subscribed {
+		return nil
+	}
+
+	return h.notify(ctx, evt.Repository.Owner.Login, evt.Repository.Name, pr, evt.Sender.Login, "commented", preview(evt.Comment.Body))
+}
+
+// handlePullRequestReviewComment handles inline comments on a specific line
+// of a PR's diff — both a thread's first comment and any replies within it,
+// since GitHub delivers both via this same event with no distinguishing
+// action. Unlike handleIssueComment, the payload already carries the full
+// PullRequest object, so no separate fetch is needed.
+func (h *Handler) handlePullRequestReviewComment(ctx context.Context, body []byte) error {
+	var evt PullRequestReviewCommentEvent
+	if err := json.Unmarshal(body, &evt); err != nil {
+		return fmt.Errorf("decode pull_request_review_comment: %w", err)
+	}
+	if evt.Action != "created" || !h.orgAllowed(evt.Repository.Owner.Login) {
+		return nil
+	}
+	if evt.Comment.User.Login == h.cfg.GitHubUsername {
+		return nil // don't notify the user about their own comment
+	}
+	if evt.PullRequest.Draft { // REQ-005
+		return nil
+	}
+
+	client, err := h.installationFor(ctx, evt.Installation.ID)
+	if err != nil {
+		return err
+	}
+
+	pr := &evt.PullRequest
 	subscribed, err := githubapp.IsSubscribed(ctx, client, evt.Repository.Owner.Login, evt.Repository.Name, pr, h.cfg.GitHubUsername)
 	if err != nil {
 		return err

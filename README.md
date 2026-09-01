@@ -38,7 +38,7 @@ Incoming-webhook delivery can't thread (Slack's incoming webhooks never return a
    - Pull requests: Read-only
    - Issues: Read-only (issue comments live under this permission)
    - Metadata: Read-only (required by default)
-3. Subscribe to webhook events: `Issue comment`, `Pull request review`, `Pull request`.
+3. Subscribe to webhook events: `Issue comment`, `Pull request review`, `Pull request review comment`, `Pull request`. `Pull request review comment` is easy to miss — without it, inline diff comments (GitHub's `#discussion_r...` URLs, as opposed to `#issuecomment-...`) and their thread replies never reach the Lambda at all (not a bug to debug — GitHub simply never sends the delivery if the App isn't subscribed).
 4. Webhook URL: the Lambda Function URL, once deployed (see "Deploying"). You can also point it at a placeholder and update it after the first `terraform apply`.
 5. Generate and download a webhook secret and a private key (`.pem`), and take note of the App ID. The Terraform module takes these as direct sensitive input values (`github_app_id`, `github_app_private_key`, `github_webhook_secret`) rather than reading them from any particular backend itself — store them however your Terraform setup already manages secrets (SSM Parameter Store, encrypted tfvars, etc.) and resolve them to values before passing them to the module. If using SSM, I recommend prefixing parameter names with your GitHub username to keep instances distinct if this is ever deployed for more than one person in the same account, e.g. `/github-pr-slack-notifier/<username>/github-app-private-key`.
 6. Install the App on whichever GitHub organization(s)/repositories you want notifications from.

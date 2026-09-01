@@ -74,7 +74,7 @@ This document specifies the requirements, subscription/notification semantics, a
 - **SEC-001**: The GitHub App MUST be registered under the user's personal GitHub account, not any organization account, so that the user retains independent control (suspend/uninstall) regardless of their org membership status.
 - **SEC-002**: Incoming webhook requests to the Lambda Function URL MUST be authenticated by verifying the GitHub webhook HMAC signature (`X-Hub-Signature-256`) before any processing.
 - **SEC-003**: The deployment into any shared/employer-owned AWS account MUST be discoverable and destroyable by a third party (see GUD-001) without requiring the user's involvement.
-- **SEC-004**: The GitHub App MUST request the minimum permission scope needed (read-only access to pull requests, issues/comments, and repository metadata) and subscribe only to the webhook events needed (`pull_request`, `pull_request_review`, `issue_comment`).
+- **SEC-004**: The GitHub App MUST request the minimum permission scope needed (read-only access to pull requests, issues/comments, and repository metadata) and subscribe only to the webhook events needed (`pull_request`, `pull_request_review`, `pull_request_review_comment`, `issue_comment`). Omitting `pull_request_review_comment` specifically means GitHub never delivers inline diff comments (`#discussion_r...` URLs) or their thread replies at all — not a processing bug, a missing subscription; there is no delivery to debug in the GitHub App's "Recent Deliveries" log when this happens, which is itself the diagnostic signal.
 
 ### Ownership & Repo Structure
 
@@ -97,9 +97,11 @@ Delivered by the GitHub App installation. Relevant event types and the fields th
 | Event | Trigger condition consumed | Key fields used |
 |---|---|---|
 | `issue_comment` | `action == "created"`, `issue.pull_request` present | `issue.pull_request.url`, `issue.draft` (may require a follow-up PR fetch), `comment.user.login`, `repository.full_name` |
+| `pull_request_review_comment` | `action == "created"` | `pull_request.draft` (already present, no fetch needed), `comment.user.login`, `comment.body`. Covers both a thread's first inline comment and any replies within it — GitHub delivers both identically, with no field distinguishing a reply from a new thread. Requires the `pull_request_review_comment` webhook subscription (SEC-004) in addition to the events above; a missing subscription here produces no delivery at all, not a processing error. |
 | `pull_request_review` | `action == "submitted"`, `review.state in {approved, changes_requested}` (and optionally `commented`, see OQ-003) | `pull_request.draft`, `review.state`, `review.user.login` |
 | `pull_request` | `action == "closed"` and `pull_request.merged == true` | `pull_request.draft`, `pull_request.merged`, `pull_request.merged_by.login` |
 | `pull_request` | `action == "labeled"` | `pull_request.draft`, `label.name` |
+| `pull_request` | `action == "edited"`, `changes.title` present | `pull_request.title`, `pull_request.html_url` (REQ-018 thread header refresh, not a notification) |
 
 All handlers MUST discard the event early if `pull_request.draft == true` (or, for `issue_comment`, if the referenced PR is a draft — requires fetching the PR object since `issue_comment` payloads do not include `draft`).
 
@@ -198,6 +200,7 @@ Per GUD-005, secret values (`github_app_private_key`, `github_webhook_secret`, `
 - **AC-015**: Given bot-token delivery and a PR with an existing thread, When the PR's title is edited, Then the thread's header message is updated in place via `chat.update` and no new message is sent to the channel.
 - **AC-016**: Given a PR with no existing thread (regardless of delivery method), When the PR's title is edited, Then nothing is sent to Slack at all — no error, no message.
 - **AC-017**: Given a PR is edited but the title itself did not change (e.g., only the base branch changed), When the webhook arrives, Then no header update and no notification occurs.
+- **AC-018**: Given a non-draft PR the user is subscribed to, When someone else posts an inline diff comment (`pull_request_review_comment`, `action: "created"`) — whether it's the first comment in a new review thread or a reply within an existing one — Then the user receives a Slack notification, formatted identically to an `issue_comment` notification.
 
 ## 6. Test Automation Strategy
 
