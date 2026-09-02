@@ -35,7 +35,7 @@ jobs:
       fail-fast: false
       matrix:
         working_directory: [terraform/module, terraform/testing]
-    uses: emmahsax/github-actions/.github/workflows/terraform-validate.yml@add-terraform-validate-reusable-action
+    uses: emmahsax/github-actions/.github/workflows/terraform-validate.yml@main
     with:
       branch: ${{ needs.setup.outputs.branch }}
       terraform_version: ~1.15.8
