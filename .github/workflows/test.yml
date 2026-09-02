@@ -28,30 +28,15 @@ jobs:
       go_version: 1.26
 
   terraform-validate:
-    if: ${{ !github.event.pull_request.draft }}
+    needs: [ setup ]
     permissions:
       contents: read
-    runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        directory: [ terraform/module, terraform/testing ]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v4
-        with:
-          terraform_version: "~1.15.8"
-
-      - name: Terraform Format Check
-        run: terraform fmt -check -diff
-        working-directory: ${{ matrix.directory }}
-
-      - name: Terraform Init
-        run: terraform init -backend=false
-        working-directory: ${{ matrix.directory }}
-
-      - name: Terraform Validate
-        run: terraform validate
-        working-directory: ${{ matrix.directory }}
+        working_directory: [terraform/module, terraform/testing]
+    uses: emmahsax/github-actions/.github/workflows/terraform-validate.yml@add-terraform-validate-reusable-action
+    with:
+      branch: ${{ needs.setup.outputs.branch }}
+      terraform_version: ~1.15.8
+      working_directory: ${{ matrix.working_directory }}
