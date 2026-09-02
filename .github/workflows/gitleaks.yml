@@ -2,12 +2,14 @@ name: GitLeaks
 
 on:
   pull_request:
+    types: [opened, ready_for_review, reopened, synchronize]
   push:
     branches: [ main ]
   workflow_dispatch:
 
 jobs:
   gitleaks:
+    if: ${{ !github.event.pull_request.draft }}
     permissions:
       contents: read
     uses: emmahsax/github-actions/.github/workflows/gitleaks.yml@main
