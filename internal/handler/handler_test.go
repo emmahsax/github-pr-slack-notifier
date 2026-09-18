@@ -591,6 +591,73 @@ func TestHandle_PullRequest_UnlabeledDraftSuppressed(t *testing.T) {
 	}
 }
 
+func TestHandle_PullRequest_Synchronize_NotifiesWithCommitLink(t *testing.T) {
+	pr := githubapp.PullRequest{Number: 42, Draft: false, Author: githubapp.User{Login: "emmahsax"}, HTMLURL: "https://github.com/acme/widgets/pull/42", Title: "Add widget support"}
+	env := newTestEnv(t, pr, nil, nil, nil, nil)
+
+	body := []byte(`{
+		"action": "synchronize",
+		"after": "abc123def456",
+		"pull_request": {"number": 42, "draft": false, "user": {"login": "emmahsax"}, "html_url": "https://github.com/acme/widgets/pull/42", "title": "Add widget support"},
+		"repository": {"name": "widgets", "owner": {"login": "acme"}, "html_url": "https://github.com/acme/widgets"},
+		"installation": {"id": 1},
+		"sender": {"login": "reviewer1"}
+	}`)
+
+	if err := env.handler.Handle(context.Background(), "pull_request", sign(testSecret, body), body); err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if len(env.sent) != 1 {
+		t.Fatalf("expected 1 notification for a pushed commit, got %d: %v", len(env.sent), env.sent)
+	}
+	want := "*<https://github.com/acme/widgets/pull/42|acme/widgets#42> (@emmahsax):* Add widget support\n> *@reviewer1* <https://github.com/acme/widgets/commit/abc123def456|pushed a commit>"
+	if env.sent[0] != want {
+		t.Errorf("notification text = %q, want %q", env.sent[0], want)
+	}
+}
+
+func TestHandle_PullRequest_Synchronize_DraftSuppressed(t *testing.T) {
+	pr := githubapp.PullRequest{Number: 42, Draft: true, Author: githubapp.User{Login: "emmahsax"}}
+	env := newTestEnv(t, pr, nil, nil, nil, nil)
+
+	body := []byte(`{
+		"action": "synchronize",
+		"after": "abc123def456",
+		"pull_request": {"number": 42, "draft": true, "user": {"login": "emmahsax"}},
+		"repository": {"name": "widgets", "owner": {"login": "acme"}, "html_url": "https://github.com/acme/widgets"},
+		"installation": {"id": 1},
+		"sender": {"login": "reviewer1"}
+	}`)
+
+	if err := env.handler.Handle(context.Background(), "pull_request", sign(testSecret, body), body); err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if len(env.sent) != 0 {
+		t.Errorf("expected no notification for a commit pushed to a draft PR, got %v", env.sent)
+	}
+}
+
+func TestHandle_PullRequest_Synchronize_OwnCommitSuppressed(t *testing.T) {
+	pr := githubapp.PullRequest{Number: 42, Draft: false, Author: githubapp.User{Login: "someone-else"}}
+	env := newTestEnv(t, pr, nil, nil, nil, nil)
+
+	body := []byte(`{
+		"action": "synchronize",
+		"after": "abc123def456",
+		"pull_request": {"number": 42, "draft": false, "user": {"login": "someone-else"}},
+		"repository": {"name": "widgets", "owner": {"login": "acme"}, "html_url": "https://github.com/acme/widgets"},
+		"installation": {"id": 1},
+		"sender": {"login": "emmahsax"}
+	}`)
+
+	if err := env.handler.Handle(context.Background(), "pull_request", sign(testSecret, body), body); err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if len(env.sent) != 0 {
+		t.Errorf("expected no notification about your own pushed commit, got %v", env.sent)
+	}
+}
+
 func TestHandle_UnknownEventTypeIgnored(t *testing.T) {
 	env := newTestEnv(t, githubapp.PullRequest{}, nil, nil, nil, nil)
 	body := []byte(`{}`)
