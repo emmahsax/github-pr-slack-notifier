@@ -129,7 +129,7 @@ Neither `lambda_zip_path` nor `lambda_release` is **required** — most people p
 
 ### Additional Costs and Notes
 
-Two costs worth knowing about here, one unconditional and one specific to actually using option 2.
+A few costs worth knowing about here: one unconditional, and a couple specific to actually using option 1 or 2.
 
 - Unconditional: the module depends on `hashicorp/http` and `hashicorp/local` in addition to `aws` — every consumer's `terraform init` downloads and locks both, whether or not `lambda_release.version` is ever set, since Terraform resolves provider requirements statically rather than based on whether the resources using them end up with `count = 0`.
 - Conditional, only when option 1 or option 2 above is actually active (a real local build, or `lambda_release.version` set):
