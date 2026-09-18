@@ -34,3 +34,7 @@ go.work
 *.tfstate.*
 *.tfvars
 !*.tfvars.example
+
+# Lambda release zip downloaded by the terraform module itself
+# (var.lambda_release_version)
+terraform/module/.lambda-release/

@@ -43,9 +43,18 @@ variable "lambda_function_name" {
   type        = string
 }
 
+variable "lambda_release" {
+  default     = {}
+  description = "Controls the module downloading and deploying a tagged GitHub Release's lambda.zip itself, for appliers with no local build at all (e.g. a non-interactive CI/Spacelift runner) — only takes effect when lambda_zip_path doesn't resolve to an existing local file, since a local build always takes priority. `version` (default `null`) is the git tag to fetch (e.g. \"v0.0.3\"); leaving it `null` disables this feature entirely (module falls back to whatever's already deployed). `repo` (default `\"emmahsax/github-pr-slack-notifier\"`) is the GitHub \"owner/repo\" `version`'s tag lives in — override it if you're running from a fork (this repo's README explicitly invites forking), otherwise you'll silently deploy someone else's build instead of yours. Keep `version` in sync with whatever tag this module call's own `source = \"...?ref=<tag>\"` is pinned to — Terraform can't read its own source ref, so the two have to be set to the same value by hand (e.g. from one shared `local` in the consumer's config) rather than one being inferred from the other. Fetching the release adds `hashicorp/http` and `hashicorp/local` as provider dependencies, and stores the zip's bytes in Terraform state — expect a plan/state-size cost proportional to the zip's size (a few MB) on every apply where `version` is set, even when it hasn't changed, since Terraform re-fetches data sources on every plan."
+  type = object({
+    repo    = optional(string, "emmahsax/github-pr-slack-notifier")
+    version = optional(string)
+  })
+}
+
 variable "lambda_zip_path" {
   default     = "../../dist/lambda.zip"
-  description = "Path to the built Lambda deployment package (run `task build` first). If missing, this module falls back to whatever code is already deployed instead of erroring, so plan/apply is a no-op for anyone who hasn't built it locally — only whoever has the zip can actually push a code update."
+  description = "Path to the built Lambda deployment package (run `task build` first). If missing, this module falls back to lambda_release.version (if set) and then to whatever code is already deployed, so plan/apply is a no-op for anyone with neither — only whoever has the zip, or has lambda_release.version set, can actually push a code update."
   type        = string
 }
 

@@ -1,6 +1,6 @@
 github_app_id          = "123456"
 github_org_allowlist   = ["my-org"]
-github_username        = "emmahsax"
+github_username        = "emmahsax-test"
 slack_delivery_method  = "bot_token"
 slack_target           = "C0123456789"
 

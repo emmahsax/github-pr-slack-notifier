@@ -17,7 +17,7 @@ resource "aws_lambda_function" "this" {
     }
   }
 
-  filename      = var.lambda_zip_path
+  filename      = local.effective_lambda_filename
   function_name = local.lambda_function_name
   handler       = "bootstrap"
 
