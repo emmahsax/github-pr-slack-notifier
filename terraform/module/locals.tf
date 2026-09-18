@@ -59,7 +59,7 @@ locals {
   # real local build at var.lambda_zip_path — always wins, since it's an
   # explicit "I'm actively changing the code" signal; (2) var.lambda_release.version
   # set — the module downloads that tagged release's lambda.zip itself (see
-  # lambda_release.tf) so non-interactive/CI runners don't need a local
+  # lambda_deploy.tf) so non-interactive/CI runners don't need a local
   # build or an external pre-apply step; (3) neither set — fall back to
   # whatever hash is already deployed so this resource is a silent no-op.
   # This only fails on a genuinely first-ever apply of this module with
@@ -67,14 +67,18 @@ locals {
   # to fall back to.
   lambda_zip_exists = fileexists(var.lambda_zip_path)
 
-  # filename actually uploaded to Lambda on create, following the same
-  # precedence as the hash below — falls back to var.lambda_zip_path's
-  # (possibly nonexistent) value when neither source is available, matching
-  # this resource's pre-existing first-apply-only-error behavior.
+  # filename actually uploaded to Lambda, always resolving to
+  # lambda_deploy_zip_path (see lambda_deploy.tf) regardless of which tier
+  # is active — referencing the winning local_file's own .filename attribute
+  # (rather than the local directly) when one exists gives Terraform an
+  # implicit dependency ensuring that file is actually written before
+  # aws_lambda_function tries to read it. Falls through to the bare local
+  # when neither local_file is active (tier 3) — same literal string either
+  # way, which is what lets tier 3 be a genuine no-op (see lambda_deploy.tf).
   effective_lambda_filename = (
-    local.lambda_zip_exists ? var.lambda_zip_path :
+    length(local_file.lambda_zip_copy) > 0 ? local_file.lambda_zip_copy[0].filename :
     length(local_file.lambda_release_zip) > 0 ? local_file.lambda_release_zip[0].filename :
-    var.lambda_zip_path
+    local.lambda_deploy_zip_path
   )
 
   lambda_source_code_hash = (

@@ -35,6 +35,6 @@ go.work
 *.tfvars
 !*.tfvars.example
 
-# Lambda release zip downloaded by the terraform module itself
-# (var.lambda_release_version)
-terraform/module/.lambda-release/
+# Lambda deploy zip mirrored/downloaded by the terraform module itself
+# (see terraform/module/lambda_deploy.tf)
+terraform/module/.lambda-deploy/
