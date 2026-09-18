@@ -85,26 +85,57 @@ data "aws_ssm_parameter" "slack_credential" {
 }
 
 module "pr_slack_notifier" {
-  source = "git::https://github.com/emmahsax/github-pr-slack-notifier.git//terraform/module?ref=v0.0.1"
+  # The ref must be a literal string here — Terraform resolves a module's source
+  # address during `terraform init`, before any locals/variables are
+  # evaluated, so interpolation is never allowed in `source`, not even from
+  # a local. Update this by hand to match lambda_release.version below when
+  # bumping versions; nothing enforces the two staying in sync.
+  source = "git::https://github.com/emmahsax/github-pr-slack-notifier.git//terraform/module?ref=v0.0.5"
 
-  github_app_id           = "123456"
-  github_app_private_key  = data.aws_ssm_parameter.github_app_private_key.value
-  github_org_allowlist    = ["my-org"]
-  github_username         = "emmahsax"
-  github_webhook_secret   = data.aws_ssm_parameter.github_webhook_secret.value
+  github_app_id          = "123456"
+  github_app_private_key = data.aws_ssm_parameter.github_app_private_key.value
+  github_org_allowlist   = ["my-org"]
+  github_username        = "emmahsax"
+  github_webhook_secret  = data.aws_ssm_parameter.github_webhook_secret.value
 
-  # Optional — see note below. Omit this entirely if you don't have a local build.
-  lambda_zip_path         = "${path.module}/../../dist/lambda.zip"
+  # Optional — see "Providing the Lambda's code" below. Omit both
+  # lambda_zip_path and lambda_release entirely if you don't have a local
+  # build and don't want the module fetching one itself.
+  lambda_release = {
+    # Defaults to this repo's own emmahsax/github-pr-slack-notifier —
+    # only set it if you're running from a fork.
+    repo = "emmahsax/github-pr-slack-notifier"
+    # Keep this matching source's ref above, by hand.
+    version = "v0.0.5"
+  }
 
-  slack_credential        = data.aws_ssm_parameter.slack_credential.value
-  slack_delivery_method   = "bot_token"
-  slack_target            = "C0123456789"
+  lambda_zip_path = "${path.module}/../../dist/lambda.zip"
+
+  slack_credential      = data.aws_ssm_parameter.slack_credential.value
+  slack_delivery_method = "bot_token"
+  slack_target          = "C0123456789"
 }
 ```
 
 If your Terraform setup already manages secrets some other way (e.g. encrypted tfvars), skip the data sources and pass those values into the module directly instead.
 
-`lambda_zip_path` is **not required** for most people applying this module — it only matters to whoever is actually pushing a Lambda code update(s). If you leave it unset (or the path it resolves to doesn't exist locally), the module falls back to whatever code is already deployed and leaves the function's `filename` untouched (via `lifecycle.ignore_changes`), so `plan`/`apply` is a clean no-op. This means teammates who just need to `plan`/`apply` other parts of a shared consumer file — without ever running `task build` or downloading a release zip — can do so safely. Only set `lambda_zip_path` when you're the one deploying a real code change (pointing it at `task build`'s output or a downloaded release `lambda.zip`).
+### Providing the Lambda's code
+
+Neither `lambda_zip_path` nor `lambda_release` is **required** — most people planning/applying this module need neither, only whoever is actually pushing a Lambda code update. The module resolves the code to deploy in this priority order, highest first:
+
+1. **`lambda_zip_path`** resolves to a real local file (default `../../dist/lambda.zip`, i.e. `task build`'s output). This always wins — it's the explicit "I'm actively changing the code and testing it" signal, so it overrides everything else even if `lambda_release.version` is also set.
+2. **`lambda_release.version`** is set and `lambda_zip_path` didn't resolve to a file. The module downloads that tag's `lambda.zip` release asset itself from `lambda_release.repo` (defaults to this repo's own `emmahsax/github-pr-slack-notifier` — override it if you're running from a fork, otherwise you'll silently deploy someone else's build) via the `hashicorp/http` and `hashicorp/local` providers, and deploys that — no local build, no CI pipeline step, no pre-apply hook required. This is the option for non-interactive runners (Spacelift, Atlantis, CI-driven `apply`, Terrateam, etc) and for teammates who just want "whatever the pinned version is" without building anything.
+3. **`lambda_zip_path` doesn't resolve to a file, and `lambda_release.version` is `null`** (its default). Note this isn't "neither variable is set" — `lambda_zip_path` always has *some* value (its own default, or an explicit override) whether or not a file actually exists there; what puts you in this tier is that path not resolving, not the version being unset. The module falls back to whatever code is already deployed, so `plan`/`apply` is a clean no-op — this works because options 1 and 2 both mirror their bytes to the same fixed internal path (see `lambda_deploy.tf`) before `aws_lambda_function` ever sees them, so that path's value never changes between applies regardless of which option last won or which machine/runner applied it; combined with this tier's `source_code_hash` matching whatever's already deployed, neither attribute the AWS provider watches for a code update ever actually differs, so it never re-reads any file, whether or not one exists on disk. This is the default for most consumer files, and is also what a *first-ever* apply falls back to if it has neither a local build nor `lambda_release.version` — with no existing function yet, that first apply will fail, so a genuinely fresh deployment needs one of the first two options at least once.
+
+### Additional Costs and Notes
+
+A few costs worth knowing about here: one unconditional, and a couple specific to actually using option 1 or 2.
+
+- Unconditional: the module depends on `hashicorp/http` and `hashicorp/local` in addition to `aws` — every consumer's `terraform init` downloads and locks both, whether or not `lambda_release.version` is ever set, since Terraform resolves provider requirements statically rather than based on whether the resources using them end up with `count = 0`.
+- Conditional, only when option 1 or option 2 above is actually active (a real local build, or `lambda_release.version` set):
+  - Either one mirrors the zip's bytes into Terraform state (roughly the zip's size, currently a few MB) — not just `lambda_release.version`; a local build via `lambda_zip_path` is mirrored the same way, for the same reason (see "Providing the Lambda's code" above). When Terraform runs `plan`/`apply` with no changes, there's no size change to the state. When the content changes (a new local build, or a new `lambda_release.version`), the new zip's bytes replace the previous ones. If your state backend keeps historical snapshots (e.g. S3 bucket versioning), each apply's full-state snapshot still bakes in that zip-sized entry, so storage there can genuinely accumulate across applies even though the live state file itself doesn't.
+  - When `lambda_release.version` is set, every single `plan`/`apply` runs a network fetch and a full rewrite of that state entry, no matter whether the version of the lambda changed or not. In order to avoid this, we recommend removing `version` from `lambda_release` (or the whole block) unless the lambda is being created for the first time or the version is being changed.
+  - Expect a `Warning: Response body is not recognized as UTF-8` on every `plan`/`apply` where `lambda_release.version` is set — this is harmless, not a sign anything's wrong. The `hashicorp/http` provider always populates its plain-string `response_body` attribute internally and warns when it isn't valid UTF-8, regardless of which attribute your config actually reads; a zip file's binary bytes essentially never are. This module only ever reads `response_body_base64` (binary-safe), so the warning doesn't reflect any actual problem with the downloaded content — verified directly by downloading a real release through this exact mechanism and confirming the resulting hash matched GitHub's own reported digest bit-for-bit.
 
 The module auto-generates `Description`/`ManagedBy`/`Owner`/`Region` tags (defaulting to an auto-generated sentence, `"IAC"`, `github_username`, and `"us-east-2"` respectively), so a shared/employer account deployment is self-describing without hand-writing ownership prose. That's the whole point of deploying via a visible thin consumer block instead of running this somewhere only you can see: a teammate should be able to find and destroy it without your involvement. Override any of these by setting the same key in the single `tags` variable, e.g. `tags = { Owner = "someone-else", Environment = "Personal" }`. Every taggable resource also gets `Name` and `ResourceType` tags — these two are always accurate to the actual resource and can never be overridden via `tags`, unlike everything else.
 
@@ -146,10 +177,10 @@ In practice: **effectively $0/month**, comfortably inside AWS's perpetual free t
 
 - The module takes secret values directly rather than reading from a specific backend, so it works the same whether your consumer resolves them from SSM, encrypted tfvars, or anywhere else. Whatever you pass in gets set as a plain Lambda environment variable — the Lambda's own IAM role never needs any secrets-backend read access — but those values will also land in Terraform state in plaintext, same as any other resource attribute. Restrict state storage access accordingly.
 - The Lambda Function URL has `authorization_type = "NONE"` (GitHub can't do AWS SigV4 auth) — the endpoint is intentionally public, and security is enforced entirely by the webhook HMAC signature check inside the handler.
-- `dist/lambda.zip` is gitignored, so it only exists on whichever machine last ran `task build`. When `lambda_zip_path` is missing or unset, the module falls back to whatever code is already deployed for `source_code_hash`, and `filename` itself is excluded from diffing (`lifecycle.ignore_changes`) so its value drifting between machines' local paths never matters — `plan`/`apply` from anyone else is a silent no-op on this resource rather than an error. The one exception: the very first-ever `apply` of a fresh deployment must come from a machine that has actually built/downloaded the zip, since there's no existing function yet to fall back to.
-  - On a non-interactive runner (Spacelift, Atlantis, CI-driven `apply`, Terrateam, etc.) nobody's laptop is available to satisfy that first apply, so the zip has to be staged by the pipeline itself. Two things to get right: (1) `lambda_zip_path`'s relative-path resolution is ordinary Terraform filesystem-function behavior — it resolves against the working directory `terraform`/`terragrunt` actually runs in, **not** `path.module` — so a relative value only works if it's correct relative to wherever your pipeline invokes Terraform, which for many CI platforms is the stack's project root, not the repo root. (2) something in the pipeline has to place a real `lambda.zip` at that resolved path before Terraform runs — e.g. a pre-plan hook that downloads the tagged release's `lambda.zip` asset from this repo's GitHub Releases (`https://github.com/emmahsax/github-pr-slack-notifier/releases/download/<tag>/lambda.zip`). Once the function exists, remove that hook and the `lambda_zip_path` override again — leaving them enabled just adds a redundant download to every future plan, and risks the hook's pinned release tag silently drifting out of sync with the module's `source` ref if only one of the two ever gets bumped.
+- `dist/lambda.zip` is gitignored, so it only exists on whichever machine last ran `task build`. Its bytes get mirrored to a fixed internal path (`lambda_deploy.tf`) before `aws_lambda_function` ever reads them, so `dist/lambda.zip`'s own (machine-specific) path never actually reaches that resource and its drift between machines never matters. See "Providing the Lambda's code" above for the full `lambda_zip_path`/`lambda_release` precedence — on a non-interactive runner (Spacelift, Atlantis, CI-driven `apply`, Terrateam) with no local build available, `lambda_release.version` is the way to get past a first-ever apply without a pre-apply pipeline step.
+  - Independently of that precedence: `lambda_zip_path`'s relative-path resolution is ordinary Terraform filesystem-function behavior — it resolves against the working directory `terraform`/`terragrunt` actually runs in, **not** `path.module` — so a relative value only works if it's correct relative to wherever your pipeline invokes Terraform, which for many CI platforms is the stack's project root, not the repo root.
 - Bot-token delivery provisions a small DynamoDB table (pay-per-request, with a 90-day TTL so it doesn't grow unbounded) purely to remember which Slack thread each PR belongs to — this doesn't apply to the "no persistent database" framing elsewhere in this project, which is about subscription determination (still computed live off the GitHub API every time), not notification-thread bookkeeping.
-- Single-user only (v1): notifies exactly one GitHub username. See the spec's open questions for what multi-user support would require.
+- Single-user only: notifies exactly one GitHub username. See the [design doc](docs/design-pr-subscription-notifier.md)'s Future Improvements section for what multi-user support would require.
 - When a PR's title changes and a thread already exists for it (bot-token delivery), the thread's header is updated in place via `chat.update` — this needs no extra GitHub API call, since the new title is already in the `pull_request` webhook payload. If no thread exists yet, or delivery is incoming-webhook, this is a silent no-op. **With incoming-webhook delivery, previously sent messages are never rewritten.** Each flat message reflects whatever the title was at the moment *that* message was sent; renaming a PR does not go back and update earlier messages, it only means the *next* message will show the new title.
 
 ---

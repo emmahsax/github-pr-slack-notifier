@@ -34,3 +34,7 @@ go.work
 *.tfstate.*
 *.tfvars
 !*.tfvars.example
+
+# Lambda deploy zip mirrored/downloaded by the terraform module itself
+# (see terraform/module/lambda_deploy.tf)
+terraform/module/.lambda-deploy/
