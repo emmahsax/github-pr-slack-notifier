@@ -89,10 +89,11 @@ This document specifies the requirements, subscription/notification semantics, a
 - **GUD-002**: The Terraform module in the personal repo MUST be generic and parameterized (GitHub org allowlist, AWS deployment target, Slack credentials, etc. as input variables) with no employer-specific values hardcoded.
 - **GUD-003**: Any deployment into an employer-owned AWS account MUST be done via a "thin consumer block" in that employer's Terraform repository, referencing the personal repo's module by git source and a pinned version tag. The employer repo's copy does not require duplicating module logic.
 - **GUD-004**: The thin consumer block deployed into a shared employer account MUST carry a tag or description clearly identifying it as the user's personal tool, stating it is safe to destroy on the user's offboarding, and linking to the personal repo (e.g., `Description = "Personal PR-notification Lambda for <user> -- safe to destroy on offboarding, code at github.com/<user>/<repo>"`). The module also tags every taggable resource with `Description`, `ManagedBy`, `Name`, `Owner`, `Region`, and `ResourceType` — `Name`/`ResourceType` are always derived from the actual resource and can never be overridden; `Description`/`ManagedBy`/`Owner`/`Region` all default automatically but can be overridden, all through the single `tags` variable (GUD-007).
-- **GUD-005**: The module MUST accept secret material (`github_app_private_key`, `github_webhook_secret`, `slack_credential`) as direct sensitive input variables, not as references to a specific secrets backend (e.g. not as SSM parameter names). This keeps the module portable across whatever secrets-management convention a given consumer already uses — resolving a name/path to an actual value (via an SSM `data` source, a secrets-manager-backed variable, or otherwise) is the consumer's responsibility.
+- **GUD-005**: The module MUST accept secret material (`github.app_private_key`, `github.webhook_secret`, `slack.credential`) as direct sensitive input variables, not as references to a specific secrets backend (e.g. not as SSM parameter names). This keeps the module portable across whatever secrets-management convention a given consumer already uses — resolving a name/path to an actual value (via an SSM `data` source, a secrets-manager-backed variable, or otherwise) is the consumer's responsibility.
 - **GUD-006**: Every AWS resource name (`function_name`, and per-resource overrides `lambda_function_name`/`iam_role_name`/`thread_store_policy_name`/`thread_store_table_name`) MUST default to a value that includes `github_username`, so multiple people's instances of this module can coexist in the same AWS account without a name collision — while still being individually overridable. IAM resource names default to PascalCase, everything else to dash-case.
 - **GUD-007**: All tag customization MUST go through a single `tags` input variable (a map). The module computes sensible defaults for `Description`/`ManagedBy`/`Owner`/`Region` internally and merges them with whatever the consumer supplies in `tags`, so a consumer overrides a default by setting the same key (e.g. `tags = { Owner = "someone-else" }`). Every value in `tags` MUST be validated at plan time against the AWS tag-value character set (letters, numbers, spaces, and `. : / = + - @`), since AWS tag values reject other punctuation such as commas.
 - **GUD-008**: The module MUST resolve which Lambda code to deploy via exactly three priority tiers, evaluated in this order: (1) `lambda_zip_path` resolves to an existing local file — always wins, since it's an explicit "I have a build I'm actively testing" signal; (2) `lambda_zip_path` does not resolve to an existing file, and `lambda_release.version` (a git tag string, default `null`, nested in the single `lambda_release` object alongside `repo`) is non-null — the module downloads that tag's `lambda.zip` GitHub Release asset from `lambda_release.repo` (an `"owner/repo"` string, defaulting to this repo's own canonical location but overridable — GUD-001/PAT-001 already establish that forks are an expected, supported way to run this codebase, so this must not be hardcoded to one specific repo) and deploys it; (3) `lambda_zip_path` does not resolve AND `lambda_release.version` is `null` — fall back to whatever `source_code_hash` is already deployed (via a data source lookup), making `plan`/`apply` a silent no-op. Tiers (1) and (2) MUST mirror their winning bytes to one fixed, machine-independent local path (rather than `aws_lambda_function` referencing `lambda_zip_path` or a per-version release path directly) — the AWS provider only re-reads and re-uploads code when `filename` or `source_code_hash` differs from state, so a stable, tier-independent `filename` value is what makes tier (3) an actual no-op requiring no file to exist, not `lifecycle.ignore_changes` (an earlier version of this design used `ignore_changes` on `filename` instead; it froze `filename` to whatever value was recorded at the time it first took effect, permanently, which broke every subsequent real deploy — including tiers (1) and (2) — once that frozen value stopped being a readable file, confirmed against a real deployment: an update triggered for any reason at all would try to re-read that stale path and fail). Note tier (3)'s condition is not "neither variable is set" — `lambda_zip_path` always holds some value (its own default or an override) whether or not a file actually exists there; it's the file's non-existence, not the variable's absence, that matters. `lambda_release.version` and `lambda_release.repo` are grouped into one object variable (rather than two flat ones) since they're only ever meaningful together — `repo` has no effect without `version` being set. `lambda_release.version` MUST NOT attempt to auto-detect the version from the module call's own `source = "...?ref=<tag>"` — Terraform has no mechanism for a module to introspect its own source/ref meta-arguments. Keeping the two in sync is the consumer's responsibility, and it MUST be done as two independent literal values, not a single shared value — `source`'s ref is a true compile-time-only string (Terraform resolves a module's source address during `terraform init`, before any locals or variables are evaluated), so unlike every other input this module accepts, it cannot be interpolated from a `local` at all. A consumer who tries `source = "...?ref=${local.version}"` gets a hard "Variables not allowed" error, confirmed against a real deployment while implementing this feature.
+- **GUD-009**: Related Terraform input variables MUST be grouped into a single object variable when they are only ever meaningful/used together, following the same pattern as `lambda_release` (GUD-008). `github` bundles `app_id`/`app_private_key`/`webhook_secret` — each referenced in exactly one place (`lambda.tf`'s environment block) and nowhere else, a tight single-purpose credential bundle. `slack` bundles `credential`/`delivery_method`/`target` — `target`'s relevance depends on `delivery_method`'s value (required for `"bot_token"`, unused for `"incoming_webhook"`), the same `optional()`-in-object pattern `lambda_release.repo` uses. `github_username`/`github_org_allowlist` deliberately stay as separate top-level variables rather than joining `github` — `github_username` is load-bearing in `locals.tf` for the function-name default and two auto-generated tags (`Description`, `Owner`), a module-wide identity value rather than an App credential, and `github_org_allowlist` is deployment-scope config, conceptually separate from App credentials. Both `github` and `slack` MUST be declared `sensitive = true` as a whole, since `app_private_key`/`webhook_secret`/`credential` are real secrets and Terraform cannot mark sensitivity per-attribute within a single object-typed variable — this also hides the non-sensitive sibling attributes (`app_id`, `delivery_method`, `target`) from plan output, an accepted tradeoff in favor of never risking a secret leaking into plan/apply output.
 - **PAT-001**: Duplicating or copying Terraform configuration between repositories (rather than referencing a single versioned module) is explicitly disallowed — it causes drift and violates the single-canonical-source convention a mature Terraform repo should already have.
 - **CON-005**: Deployment into an employer's Terraform repository MUST follow that repository's existing safety process in full (e.g., mandated review tooling, atomic single-state PRs, human-run-only `apply`/`destroy`) — the specific process is whatever that repository already requires; this spec doesn't prescribe one.
 
@@ -147,14 +148,13 @@ Used to compute subscription state (REQ-001) at event time:
 ### Configuration Contract (Terraform module inputs — as implemented)
 
 ```hcl
-variable "github_app_id" {
-  type        = string
-  description = "The GitHub App's numeric ID."
-}
-
-variable "github_app_private_key" {
-  type        = string
-  description = "The GitHub App's PEM-encoded RSA private key."
+variable "github" {
+  type = object({
+    app_id          = string
+    app_private_key = string
+    webhook_secret  = string
+  })
+  description = "The GitHub App's numeric ID, PEM-encoded RSA private key, and webhook secret (used to verify inbound signatures), grouped since they're only ever used together (GUD-009)."
   sensitive   = true
 }
 
@@ -168,30 +168,18 @@ variable "github_username" {
   description = "GitHub login whose subscriptions are evaluated."
 }
 
-variable "github_webhook_secret" {
-  type        = string
-  description = "The GitHub App's webhook secret, used to verify inbound signatures."
+variable "slack" {
+  type = object({
+    credential      = string
+    delivery_method = string
+    target          = optional(string, "")
+  })
+  description = "credential: the Slack bot token or incoming webhook URL, whichever delivery_method selects. delivery_method: either \"bot_token\" or \"incoming_webhook\" — selects which Slack delivery path is used. target: Slack channel or user ID (for bot_token delivery); unused for incoming_webhook delivery. Grouped since target's relevance depends on delivery_method (GUD-009)."
   sensitive   = true
-}
-
-variable "slack_credential" {
-  type        = string
-  description = "The Slack bot token or incoming webhook URL, whichever slack_delivery_method selects."
-  sensitive   = true
-}
-
-variable "slack_delivery_method" {
-  type        = string
-  description = "Either \"bot_token\" or \"incoming_webhook\" — selects which Slack delivery path is used."
-}
-
-variable "slack_target" {
-  type        = string
-  description = "Slack channel or user ID (for bot_token delivery); unused for incoming_webhook delivery."
 }
 ```
 
-Per GUD-005, secret values (`github_app_private_key`, `github_webhook_secret`, `slack_credential`) are passed as direct sensitive Terraform variables — the module does not read them from SSM or any other backend itself. A consumer resolves them however its own Terraform setup manages secrets before passing the value in.
+Per GUD-005, secret values (`github.app_private_key`, `github.webhook_secret`, `slack.credential`) are passed as direct sensitive Terraform variables — the module does not read them from SSM or any other backend itself. A consumer resolves them however its own Terraform setup manages secrets before passing the value in.
 
 ## 5. Acceptance Criteria
 
@@ -260,7 +248,7 @@ Per GUD-005, secret values (`github_app_private_key`, `github_webhook_secret`, `
 
 ### Infrastructure Dependencies
 - **INF-001**: AWS Lambda — hosts the event handler; must support a Function URL.
-- **INF-002**: A secrets backend of the consumer's choosing (e.g. AWS SSM Parameter Store `SecureString` parameters, or another Terraform-managed secret store) — resolves to the plaintext values the module's `github_app_private_key`, `github_webhook_secret`, and `slack_credential` inputs expect (GUD-005). Not a dependency of the module itself.
+- **INF-002**: A secrets backend of the consumer's choosing (e.g. AWS SSM Parameter Store `SecureString` parameters, or another Terraform-managed secret store) — resolves to the plaintext values the module's `github.app_private_key`, `github.webhook_secret`, and `slack.credential` inputs expect (GUD-005). Not a dependency of the module itself.
 - **INF-003**: Whatever existing Terraform tooling and state backend a consumer already uses — needed only for the thin consumer block, not for the module itself.
 - **INF-004**: AWS DynamoDB (on-demand billing) — required only for bot-token delivery, to persist PR → Slack-thread-timestamp state across Lambda invocations (REQ-016). Not created at all for incoming-webhook delivery, which has no thread state to persist.
 
@@ -315,4 +303,3 @@ Known gaps, deliberately deferred rather than built into v1. Each includes why i
 
 - **FUT-001: Renewal / dead-man's-switch mechanism.** The kill-switch design (SEC-001, SEC-003) assumes *someone* — the user themself, or a remaining org admin — knows to go uninstall the GitHub App or destroy the Terraform-managed resources. If the user is offboarded without notice and nobody else is aware this tool exists, webhook processing and Slack notifications could continue indefinitely with no one prompted to check. A renewal mechanism would require the deploying user to periodically confirm they're still around (e.g., a scheduled reminder they must acknowledge, or a small CLI/script that bumps a "last renewed" timestamp in a datastore); a scheduled check (e.g. daily EventBridge-triggered Lambda) would compare that timestamp against a threshold (e.g. 30–45 days) and, if exceeded, either alert a shared channel or automatically disable notification delivery. **Deferred because**: the tool's blast radius is low (read-only GitHub access, Slack-only output, negligible AWS cost — an unnoticed instance is a hygiene issue, not a security incident), and the immediate mitigation adopted instead was informing a teammate/manager of the tool's existence and teardown steps out-of-band, so the auto-generated resource tags (GUD-004) have at least one other person primed to act on them. Worth revisiting if this pattern is reused for a tool with a larger blast radius.
 - **FUT-002: Multi-user support.** Currently single-user (REQ-010) — notifies exactly one GitHub username per deployment. Supporting more than one user would require, at minimum, iterating the subscription check per configured user and either multiple Slack targets or a shared channel with per-user @-mentions.
-- **FUT-004: Group related Terraform variables into objects, following the `lambda_release` pattern (GUD-008).** Two groupings identified: `slack = { credential, delivery_method, target }` (justified the same way as `lambda_release` — `target`'s relevance depends on `delivery_method`'s value, matching the module's existing `optional()`-in-object pattern); `github = { app_id, app_private_key, webhook_secret }`, deliberately *excluding* `github_username`/`github_org_allowlist` — verified by usage: `app_id`/`app_private_key`/`webhook_secret` are each referenced in exactly one place (`lambda.tf`'s environment block) and nowhere else, a tight single-purpose credential bundle, while `github_username` is load-bearing in `locals.tf` for the function-name default and two auto-generated tags (`Description`, `Owner`) — a module-wide identity value, not just an App credential — and `github_org_allowlist` is deployment-scope config, conceptually separate from App credentials. **Deferred because**: unlike `lambda_release` (introduced with no prior consumers), these are the module's original, already-deployed interface — restructuring them is a breaking change requiring the Dispatch infra repo's consumer block to be updated in the same work session as the module bump, not something to bundle into an unrelated feature branch.

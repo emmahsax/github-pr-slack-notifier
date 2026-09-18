@@ -40,20 +40,20 @@ Incoming-webhook delivery can't thread (Slack's incoming webhooks never return a
    - Metadata: Read-only (required by default)
 3. Subscribe to webhook events: `Issue comment`, `Pull request review`, `Pull request review comment`, `Pull request`. `Pull request review comment` is easy to miss — without it, inline diff comments (GitHub's `#discussion_r...` URLs, as opposed to `#issuecomment-...`) and their thread replies never reach the Lambda at all (not a bug to debug — GitHub simply never sends the delivery if the App isn't subscribed).
 4. Webhook URL: the Lambda Function URL, once deployed (see "Deploying"). You can also point it at a placeholder and update it after the first `terraform apply`.
-5. Generate and download a webhook secret and a private key (`.pem`), and take note of the App ID. The Terraform module takes these as direct sensitive input values (`github_app_id`, `github_app_private_key`, `github_webhook_secret`) rather than reading them from any particular backend itself — store them however your Terraform setup already manages secrets (SSM Parameter Store, encrypted tfvars, etc.) and resolve them to values before passing them to the module. If using SSM, I recommend prefixing parameter names with your GitHub username to keep instances distinct if this is ever deployed for more than one person in the same account, e.g. `/github-pr-slack-notifier/<username>/github-app-private-key`.
+5. Generate and download a webhook secret and a private key (`.pem`), and take note of the App ID. The Terraform module takes these as a direct sensitive input object (`github = { app_id, app_private_key, webhook_secret }`) rather than reading them from any particular backend itself — store them however your Terraform setup already manages secrets (SSM Parameter Store, encrypted tfvars, etc.) and resolve them to values before passing them to the module. If using SSM, I recommend prefixing parameter names with your GitHub username to keep instances distinct if this is ever deployed for more than one person in the same account, e.g. `/github-pr-slack-notifier/<username>/github-app-private-key`.
 6. Install the App on whichever GitHub organization(s)/repositories you want notifications from.
 
 ## Slack setup
 
 Pick one delivery method:
 
-- **Bot token** (`slack_delivery_method = "bot_token"`), recommended if you want threading:
+- **Bot token** (`slack.delivery_method = "bot_token"`), recommended if you want threading:
   1. Create a Slack channel for your PR notifications (e.g. `#emmahsax-prs`).
   2. Create a Slack App with a bot token scoped to `chat:write`, install it to your workspace, and invite the bot user into that channel.
-  3. Get the channel's ID (right-click the channel → View channel details, or `#channel-name` in a browser URL bar resolves to a `C...` ID) and set `slack_target` to it.
-- **Incoming webhook** (`slack_delivery_method = "incoming_webhook"`): create a Slack incoming webhook for whichever channel you want notifications in. Simpler to set up, but every message is flat (no threading — see "How it works").
+  3. Get the channel's ID (right-click the channel → View channel details, or `#channel-name` in a browser URL bar resolves to a `C...` ID) and set `slack.target` to it.
+- **Incoming webhook** (`slack.delivery_method = "incoming_webhook"`): create a Slack incoming webhook for whichever channel you want notifications in. Simpler to set up, but every message is flat (no threading — see "How it works").
 
-Same as the GitHub secrets: pass the resulting token/URL to the module as `slack_credential`, sourced however your Terraform setup manages secrets.
+Same as the GitHub secrets: pass the resulting token/URL to the module as `slack.credential`, sourced however your Terraform setup manages secrets.
 
 ## Building Locally
 
@@ -90,13 +90,16 @@ module "pr_slack_notifier" {
   # evaluated, so interpolation is never allowed in `source`, not even from
   # a local. Update this by hand to match lambda_release.version below when
   # bumping versions; nothing enforces the two staying in sync.
-  source = "git::https://github.com/emmahsax/github-pr-slack-notifier.git//terraform/module?ref=v0.0.5"
+  source = "git::https://github.com/emmahsax/github-pr-slack-notifier.git//terraform/module?ref=v0.0.6"
 
-  github_app_id          = "123456"
-  github_app_private_key = data.aws_ssm_parameter.github_app_private_key.value
-  github_org_allowlist   = ["my-org"]
-  github_username        = "emmahsax"
-  github_webhook_secret  = data.aws_ssm_parameter.github_webhook_secret.value
+  github = {
+    app_id          = "123456"
+    app_private_key = data.aws_ssm_parameter.github_app_private_key.value
+    webhook_secret  = data.aws_ssm_parameter.github_webhook_secret.value
+  }
+
+  github_org_allowlist = ["my-org"]
+  github_username      = "emmahsax"
 
   # Optional — see "Providing the Lambda's code" below. Omit both
   # lambda_zip_path and lambda_release entirely if you don't have a local
@@ -105,15 +108,18 @@ module "pr_slack_notifier" {
     # Defaults to this repo's own emmahsax/github-pr-slack-notifier —
     # only set it if you're running from a fork.
     repo = "emmahsax/github-pr-slack-notifier"
+
     # Keep this matching source's ref above, by hand.
-    version = "v0.0.5"
+    version = "v0.0.6"
   }
 
   lambda_zip_path = "${path.module}/../../dist/lambda.zip"
 
-  slack_credential      = data.aws_ssm_parameter.slack_credential.value
-  slack_delivery_method = "bot_token"
-  slack_target          = "C0123456789"
+  slack = {
+    credential      = data.aws_ssm_parameter.slack_credential.value
+    delivery_method = "bot_token"
+    target          = "C0123456789"
+  }
 }
 ```
 

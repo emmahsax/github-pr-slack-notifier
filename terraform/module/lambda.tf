@@ -4,16 +4,16 @@ resource "aws_lambda_function" "this" {
 
   environment {
     variables = {
-      GITHUB_APP_ID           = var.github_app_id
-      GITHUB_APP_PRIVATE_KEY  = var.github_app_private_key
+      GITHUB_APP_ID           = var.github.app_id
+      GITHUB_APP_PRIVATE_KEY  = var.github.app_private_key
       GITHUB_ORG_ALLOWLIST    = join(",", var.github_org_allowlist)
       GITHUB_USERNAME         = var.github_username
-      GITHUB_WEBHOOK_SECRET   = var.github_webhook_secret
-      SLACK_BOT_TOKEN         = var.slack_delivery_method == "bot_token" ? var.slack_credential : ""
-      SLACK_DELIVERY_METHOD   = var.slack_delivery_method
-      SLACK_TARGET            = var.slack_target
-      SLACK_WEBHOOK_URL       = var.slack_delivery_method == "incoming_webhook" ? var.slack_credential : ""
-      THREAD_STORE_TABLE_NAME = var.slack_delivery_method == "bot_token" ? aws_dynamodb_table.this[0].name : ""
+      GITHUB_WEBHOOK_SECRET   = var.github.webhook_secret
+      SLACK_BOT_TOKEN         = var.slack.delivery_method == "bot_token" ? var.slack.credential : ""
+      SLACK_DELIVERY_METHOD   = var.slack.delivery_method
+      SLACK_TARGET            = var.slack.target
+      SLACK_WEBHOOK_URL       = var.slack.delivery_method == "incoming_webhook" ? var.slack.credential : ""
+      THREAD_STORE_TABLE_NAME = var.slack.delivery_method == "bot_token" ? aws_dynamodb_table.this[0].name : ""
     }
   }
 

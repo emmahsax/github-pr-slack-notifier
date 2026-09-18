@@ -1,5 +1,5 @@
-# This module takes secret VALUES directly (github_app_private_key,
-# github_webhook_secret, slack_credential — all sensitive) rather than
+# This module takes secret VALUES directly (github.app_private_key,
+# github.webhook_secret, slack.credential — all sensitive) rather than
 # reading them from any specific backend itself. That keeps the module
 # agnostic to how a consumer sources/stores plaintext secrets — SSM
 # Parameter Store, SOPS-encrypted tfvars, Vault, whatever — it's the

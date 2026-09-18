@@ -3,7 +3,7 @@
 # bounds table growth automatically — see internal/threadstore for the
 # attribute names this must match.
 resource "aws_dynamodb_table" "this" {
-  count = var.slack_delivery_method == "bot_token" ? 1 : 0
+  count = var.slack.delivery_method == "bot_token" ? 1 : 0
 
   attribute {
     name = "pr_key"

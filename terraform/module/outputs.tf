@@ -14,6 +14,6 @@ output "role_arn" {
 }
 
 output "thread_store_table_name" {
-  description = "DynamoDB table grouping a PR's notifications into one Slack thread. Empty string when slack_delivery_method is \"incoming_webhook\", which can't thread."
-  value       = var.slack_delivery_method == "bot_token" ? aws_dynamodb_table.this[0].name : ""
+  description = "DynamoDB table grouping a PR's notifications into one Slack thread. Empty string when slack.delivery_method is \"incoming_webhook\", which can't thread."
+  value       = var.slack.delivery_method == "bot_token" ? aws_dynamodb_table.this[0].name : ""
 }

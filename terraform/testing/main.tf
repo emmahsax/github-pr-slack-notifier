@@ -43,14 +43,19 @@ data "aws_ssm_parameter" "slack_credential" {
 module "pr_slack_notifier" {
   source = "../module"
 
-  github_app_id          = var.github_app_id
-  github_app_private_key = data.aws_ssm_parameter.github_app_private_key.value
-  github_org_allowlist   = var.github_org_allowlist
-  github_username        = var.github_username
-  github_webhook_secret  = data.aws_ssm_parameter.github_webhook_secret.value
-  slack_credential       = data.aws_ssm_parameter.slack_credential.value
-  slack_delivery_method  = var.slack_delivery_method
-  slack_target           = var.slack_target
+  github = {
+    app_id          = var.github_app_id
+    app_private_key = data.aws_ssm_parameter.github_app_private_key.value
+    webhook_secret  = data.aws_ssm_parameter.github_webhook_secret.value
+  }
+  github_org_allowlist = var.github_org_allowlist
+  github_username      = var.github_username
+
+  slack = {
+    credential      = data.aws_ssm_parameter.slack_credential.value
+    delivery_method = var.slack_delivery_method
+    target          = var.slack_target
+  }
 }
 
 output "function_url" {
