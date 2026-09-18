@@ -84,18 +84,13 @@ data "aws_ssm_parameter" "slack_credential" {
   with_decryption = true
 }
 
-locals {
-  # Single source of truth for which tagged release this deployment runs —
-  # referenced by both the module's source ref and lambda_release.version
-  # below, so bumping a version means changing this one value, not two.
-  # Terraform can't read a module call's own source ref back out, so this
-  # local is the only thing keeping them in sync; nothing enforces it
-  # automatically.
-  pr_slack_notifier_version = "v0.0.5"
-}
-
 module "pr_slack_notifier" {
-  source = "git::https://github.com/emmahsax/github-pr-slack-notifier.git//terraform/module?ref=${local.pr_slack_notifier_version}"
+  # The ref must be a literal string here — Terraform resolves a module's source
+  # address during `terraform init`, before any locals/variables are
+  # evaluated, so interpolation is never allowed in `source`, not even from
+  # a local. Update this by hand to match lambda_release.version below when
+  # bumping versions; nothing enforces the two staying in sync.
+  source = "git::https://github.com/emmahsax/github-pr-slack-notifier.git//terraform/module?ref=v0.0.5"
 
   github_app_id          = "123456"
   github_app_private_key = data.aws_ssm_parameter.github_app_private_key.value
@@ -109,8 +104,9 @@ module "pr_slack_notifier" {
   lambda_release = {
     # Defaults to this repo's own emmahsax/github-pr-slack-notifier —
     # only set it if you're running from a fork.
-    repo    = "emmahsax/github-pr-slack-notifier"
-    version = local.pr_slack_notifier_version
+    repo = "emmahsax/github-pr-slack-notifier"
+    # Keep this matching source's ref above, by hand.
+    version = "v0.0.5"
   }
 
   lambda_zip_path = "${path.module}/../../dist/lambda.zip"
