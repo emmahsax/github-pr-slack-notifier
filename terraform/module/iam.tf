@@ -20,7 +20,7 @@ resource "aws_iam_role" "this" {
 }
 
 resource "aws_iam_role_policy" "this" {
-  count = var.slack_delivery_method == "bot_token" ? 1 : 0
+  count = var.slack.delivery_method == "bot_token" ? 1 : 0
 
   name = local.thread_store_policy_name
   policy = jsonencode({

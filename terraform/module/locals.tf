@@ -1,5 +1,5 @@
-# This module takes secret VALUES directly (github_app_private_key,
-# github_webhook_secret, slack_credential — all sensitive) rather than
+# This module takes secret VALUES directly (github.app_private_key,
+# github.webhook_secret, slack.credential — all sensitive) rather than
 # reading them from any specific backend itself. That keeps the module
 # agnostic to how a consumer sources/stores plaintext secrets — SSM
 # Parameter Store, SOPS-encrypted tfvars, Vault, whatever — it's the
@@ -56,8 +56,8 @@ locals {
   # dist/lambda.zip is gitignored and only ever exists on whoever's machine
   # last ran `task build` — it will NOT be present for most people who plan
   # or apply this same state. Three-tier precedence, highest first: (1) a
-  # real local build at var.lambda_zip_path — always wins, since it's an
-  # explicit "I'm actively changing the code" signal; (2) var.lambda_release.version
+  # real local build at var.lambda_source.zip_path — always wins, since it's
+  # an explicit "I'm actively changing the code" signal; (2) var.lambda_source.github_release_version
   # set — the module downloads that tagged release's lambda.zip itself (see
   # lambda_deploy.tf) so non-interactive/CI runners don't need a local
   # build or an external pre-apply step; (3) neither set — fall back to
@@ -65,7 +65,7 @@ locals {
   # This only fails on a genuinely first-ever apply of this module with
   # neither (1) nor (2) available, since there's no existing function yet
   # to fall back to.
-  lambda_zip_exists = fileexists(var.lambda_zip_path)
+  lambda_zip_exists = fileexists(var.lambda_source.zip_path)
 
   # filename actually uploaded to Lambda, always resolving to
   # lambda_deploy_zip_path (see lambda_deploy.tf) regardless of which tier
@@ -82,7 +82,7 @@ locals {
   )
 
   lambda_source_code_hash = (
-    local.lambda_zip_exists ? filebase64sha256(var.lambda_zip_path) :
+    local.lambda_zip_exists ? filebase64sha256(var.lambda_source.zip_path) :
     length(local_file.lambda_release_zip) > 0 ? local_file.lambda_release_zip[0].content_base64sha256 :
     try(data.aws_lambda_function.this[0].code_sha256, null)
   )

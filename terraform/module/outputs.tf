@@ -14,6 +14,10 @@ output "role_arn" {
 }
 
 output "thread_store_table_name" {
-  description = "DynamoDB table grouping a PR's notifications into one Slack thread. Empty string when slack_delivery_method is \"incoming_webhook\", which can't thread."
-  value       = var.slack_delivery_method == "bot_token" ? aws_dynamodb_table.this[0].name : ""
+  description = "DynamoDB table grouping a PR's notifications into one Slack thread. Empty string when slack.delivery_method is \"incoming_webhook\", which can't thread."
+  # nonsensitive() here strips the sensitivity that `var.slack` being marked
+  # sensitive as a whole (variables.tf) would otherwise propagate onto this
+  # output — delivery_method itself isn't a secret, and neither is the
+  # resulting table name/empty-string value, so there's nothing to protect.
+  value = nonsensitive(var.slack.delivery_method) == "bot_token" ? aws_dynamodb_table.this[0].name : ""
 }
