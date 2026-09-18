@@ -1,6 +1,6 @@
 ---
 title: PR Subscription Slack Notifier
-version: 1.2
+version: 1.3
 date_created: 2026-08-31
 last_updated: 2026-09-18
 owner: emmahsax (personal project)
@@ -62,6 +62,9 @@ This document specifies the requirements, subscription/notification semantics, a
 - **REQ-011**: REQ-006 triggers are NOT restricted to open PRs. A merged PR remains eligible for further notifications (e.g., a comment posted after merge) as long as it is subscribed and non-draft — merging does not end a subscription or exempt the PR from future trigger events.
 - **REQ-012**: Authorship alone (REQ-001a) is sufficient subscription for the "PR is merged" trigger (REQ-006) — an author MUST be notified when their own PR is merged, independent of whether they also reviewed, commented, or committed further.
 - **REQ-019**: For a subscribed, non-draft PR, the system MUST notify the user when a new commit is pushed to the PR's head branch (GitHub's `pull_request` `synchronize` action), UNLESS the pusher is the user themself, per the same self-notification exclusion already applied to comments (handleIssueComment/handlePullRequestReviewComment) and reviews (handlePullRequestReview). Unlike REQ-012's merge exception, there is no "notify regardless of who pushed" carve-out here — a self-push is always suppressed. The pusher is identified via the webhook payload's top-level `sender`, the same field GitHub uses for every other event this system already keys self-exclusion off of; the payload does not enumerate individual pushed commits' authors, so a force-push or a squash containing commits from multiple people is still attributed to whoever performed the push.
+- **REQ-020**: For a non-draft PR, the system MUST notify the user when the PR is reopened (`pull_request` `reopened` action), but ONLY if a Slack thread already exists for that PR — not via REQ-001's normal authored/committed/reviewed/commented check. An existing thread means the user was already notified about this PR before (so they were already subscribed by definition); no thread means the user was never subscribed, and reopening alone MUST NOT newly subscribe them. This is checked regardless of who reopened it — no self-notification exclusion, matching REQ-012's/labeling's precedent rather than the comment/review/commit self-exclusion precedent.
+- **REQ-021**: For a non-draft PR, the system MUST notify the user when the PR is closed without merging (`pull_request` `closed` action with `merged: false`), under the identical thread-existence condition and no-self-exclusion rule as REQ-020. A merge is also delivered as a `closed` action (with `merged: true`) but is already covered by REQ-011/REQ-012's separate "merged" trigger — REQ-021 MUST NOT additionally fire for a merge, to avoid double-notifying the same close event.
+- **CON-006**: REQ-020/REQ-021's thread-existence check is only meaningful for bot-token delivery (REQ-015/REQ-016), since only that delivery method has a thread store. For incoming-webhook delivery, reopening or closing a PR MUST be a silent no-op, consistent with REQ-018's treatment of the same delivery method for title changes.
 
 ### Scope / Configuration
 
@@ -108,6 +111,8 @@ Delivered by the GitHub App installation. Relevant event types and the fields th
 | `pull_request` | `action == "labeled"` | `pull_request.draft`, `label.name` |
 | `pull_request` | `action == "unlabeled"` | `pull_request.draft`, `label.name` |
 | `pull_request` | `action == "synchronize"` | `pull_request.draft`, `sender.login`, `after` (new head commit SHA), `repository.html_url` (used to build the commit permalink: `{repository.html_url}/commit/{after}`) |
+| `pull_request` | `action == "reopened"` | `pull_request.draft`; subscription determined by thread-store lookup (REQ-020), not the fields listed under Section 3's outbound REST calls |
+| `pull_request` | `action == "closed"`, `pull_request.merged == false` | `pull_request.draft`; subscription determined by thread-store lookup (REQ-021), same as "reopened" |
 | `pull_request` | `action == "edited"`, `changes.title` present | `pull_request.title`, `pull_request.html_url` (REQ-018 thread header refresh, not a notification) |
 
 All handlers MUST discard the event early if `pull_request.draft == true` (or, for `issue_comment`, if the referenced PR is a draft — requires fetching the PR object since `issue_comment` payloads do not include `draft`).
@@ -215,6 +220,13 @@ Per GUD-005, secret values (`github_app_private_key`, `github_webhook_secret`, `
 - **AC-023**: Given a non-draft PR the user is subscribed to, When someone else pushes a new commit to it (`pull_request` `synchronize`), Then the user receives a Slack notification whose link points to that commit's GitHub HTML URL (`{repository.html_url}/commit/{after}`), not the PR itself.
 - **AC-024**: Given a draft PR, When a commit is pushed to it, Then no Slack notification is sent (REQ-005/REQ-019).
 - **AC-025**: Given a non-draft PR, When the user themself pushes a commit to it, Then no Slack notification is sent, regardless of whether the user authored the PR (REQ-019's self-push exclusion has no merge-style "notify anyway" carve-out).
+- **AC-026**: Given bot-token delivery, a non-draft PR, and an existing Slack thread for it, When the PR is reopened, Then the user receives a Slack notification, regardless of who reopened it.
+- **AC-027**: Given bot-token delivery and a PR with no existing Slack thread, When the PR is reopened, Then no Slack notification is sent (the user was never subscribed, and reopening alone doesn't create a subscription).
+- **AC-028**: Given bot-token delivery and an existing Slack thread for a PR, When the PR is reopened directly into a draft state, Then no Slack notification is sent (REQ-005/REQ-020).
+- **AC-029**: Given bot-token delivery, a non-draft PR, and an existing Slack thread for it, When the PR is closed without merging, Then the user receives a Slack notification, regardless of who closed it.
+- **AC-030**: Given bot-token delivery and a PR with no existing Slack thread, When the PR is closed without merging, Then no Slack notification is sent.
+- **AC-031**: Given bot-token delivery and an existing Slack thread for a PR, When the PR is merged (`closed` with `merged: true`), Then exactly one notification is sent (the merge notification per REQ-011/REQ-012) — REQ-021's close trigger MUST NOT also fire for the same event.
+- **AC-032**: Given incoming-webhook delivery, When a PR is reopened or closed without merging, Then no Slack message is sent at all, regardless of thread-equivalent state, since incoming-webhook delivery has no thread store (CON-006).
 
 ## 6. Test Automation Strategy
 

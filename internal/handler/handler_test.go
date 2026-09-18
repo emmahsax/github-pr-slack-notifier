@@ -897,6 +897,221 @@ func TestHandle_PullRequestTitleEdited_NoThreadYet_NoOp(t *testing.T) {
 	}
 }
 
+// --- reopened / closed-without-merge (FUT-003): thread existence stands in
+// for REQ-001's normal subscription check, since neither event is itself an
+// authorship/commit/review/comment action ---
+
+func TestHandle_PullRequestReopened_ThreadExistsAndNonDraft_Notifies(t *testing.T) {
+	pr := githubapp.PullRequest{Number: 42, Draft: false, Author: githubapp.User{Login: "emmahsax"}, HTMLURL: "https://github.com/acme/widgets/pull/42", Title: "Add widget support"}
+	h, sent, _ := newBotTokenTestEnv(t, pr)
+
+	comment := []byte(`{
+		"action": "created",
+		"issue": {"number": 42, "pull_request": {}},
+		"comment": {"user": {"login": "reviewer1"}, "body": "first"},
+		"repository": {"name": "widgets", "owner": {"login": "acme"}},
+		"installation": {"id": 1},
+		"sender": {"login": "reviewer1"}
+	}`)
+	if err := h.Handle(context.Background(), "issue_comment", sign(testSecret, comment), comment); err != nil {
+		t.Fatalf("Handle() setup comment error = %v", err)
+	}
+	if len(*sent) != 2 {
+		t.Fatalf("expected header + reply from the setup comment, got %d: %+v", len(*sent), *sent)
+	}
+
+	reopened := []byte(`{
+		"action": "reopened",
+		"pull_request": {"number": 42, "draft": false, "user": {"login": "emmahsax"}, "html_url": "https://github.com/acme/widgets/pull/42", "title": "Add widget support"},
+		"repository": {"name": "widgets", "owner": {"login": "acme"}},
+		"installation": {"id": 1},
+		"sender": {"login": "reviewer1"}
+	}`)
+	if err := h.Handle(context.Background(), "pull_request", sign(testSecret, reopened), reopened); err != nil {
+		t.Fatalf("Handle() reopened error = %v", err)
+	}
+
+	if len(*sent) != 3 {
+		t.Fatalf("expected 1 new notification for the reopen, got %d total: %+v", len(*sent), *sent)
+	}
+	reply := (*sent)[2]
+	if reply.threadTS != "1000.0001" {
+		t.Errorf("expected reopen notification threaded against the existing header, got %q", reply.threadTS)
+	}
+	if reply.text != "*@reviewer1* reopened the PR" {
+		t.Errorf("reopen notification text = %q", reply.text)
+	}
+}
+
+func TestHandle_PullRequestReopened_NoExistingThread_NoOp(t *testing.T) {
+	pr := githubapp.PullRequest{Number: 42, Draft: false, Author: githubapp.User{Login: "emmahsax"}}
+	h, sent, _ := newBotTokenTestEnv(t, pr)
+
+	reopened := []byte(`{
+		"action": "reopened",
+		"pull_request": {"number": 42, "draft": false, "user": {"login": "emmahsax"}},
+		"repository": {"name": "widgets", "owner": {"login": "acme"}},
+		"installation": {"id": 1},
+		"sender": {"login": "reviewer1"}
+	}`)
+	if err := h.Handle(context.Background(), "pull_request", sign(testSecret, reopened), reopened); err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if len(*sent) != 0 {
+		t.Errorf("expected no notification when reopening a PR with no existing thread (never subscribed), got %+v", *sent)
+	}
+}
+
+func TestHandle_PullRequestReopened_DraftSuppressed(t *testing.T) {
+	pr := githubapp.PullRequest{Number: 42, Draft: false, Author: githubapp.User{Login: "emmahsax"}, HTMLURL: "https://github.com/acme/widgets/pull/42", Title: "Add widget support"}
+	h, sent, _ := newBotTokenTestEnv(t, pr)
+
+	comment := []byte(`{
+		"action": "created",
+		"issue": {"number": 42, "pull_request": {}},
+		"comment": {"user": {"login": "reviewer1"}, "body": "first"},
+		"repository": {"name": "widgets", "owner": {"login": "acme"}},
+		"installation": {"id": 1},
+		"sender": {"login": "reviewer1"}
+	}`)
+	if err := h.Handle(context.Background(), "issue_comment", sign(testSecret, comment), comment); err != nil {
+		t.Fatalf("Handle() setup comment error = %v", err)
+	}
+
+	reopened := []byte(`{
+		"action": "reopened",
+		"pull_request": {"number": 42, "draft": true, "user": {"login": "emmahsax"}},
+		"repository": {"name": "widgets", "owner": {"login": "acme"}},
+		"installation": {"id": 1},
+		"sender": {"login": "reviewer1"}
+	}`)
+	if err := h.Handle(context.Background(), "pull_request", sign(testSecret, reopened), reopened); err != nil {
+		t.Fatalf("Handle() reopened error = %v", err)
+	}
+	if len(*sent) != 2 {
+		t.Errorf("expected no new notification for a PR reopened into draft, got %d total: %+v", len(*sent), *sent)
+	}
+}
+
+func TestHandle_PullRequestClosedWithoutMerge_ThreadExistsAndNonDraft_Notifies(t *testing.T) {
+	pr := githubapp.PullRequest{Number: 42, Draft: false, Author: githubapp.User{Login: "emmahsax"}, HTMLURL: "https://github.com/acme/widgets/pull/42", Title: "Add widget support"}
+	h, sent, _ := newBotTokenTestEnv(t, pr)
+
+	comment := []byte(`{
+		"action": "created",
+		"issue": {"number": 42, "pull_request": {}},
+		"comment": {"user": {"login": "reviewer1"}, "body": "first"},
+		"repository": {"name": "widgets", "owner": {"login": "acme"}},
+		"installation": {"id": 1},
+		"sender": {"login": "reviewer1"}
+	}`)
+	if err := h.Handle(context.Background(), "issue_comment", sign(testSecret, comment), comment); err != nil {
+		t.Fatalf("Handle() setup comment error = %v", err)
+	}
+	if len(*sent) != 2 {
+		t.Fatalf("expected header + reply from the setup comment, got %d: %+v", len(*sent), *sent)
+	}
+
+	closed := []byte(`{
+		"action": "closed",
+		"pull_request": {"number": 42, "draft": false, "merged": false, "user": {"login": "emmahsax"}, "html_url": "https://github.com/acme/widgets/pull/42", "title": "Add widget support"},
+		"repository": {"name": "widgets", "owner": {"login": "acme"}},
+		"installation": {"id": 1},
+		"sender": {"login": "reviewer1"}
+	}`)
+	if err := h.Handle(context.Background(), "pull_request", sign(testSecret, closed), closed); err != nil {
+		t.Fatalf("Handle() closed error = %v", err)
+	}
+
+	if len(*sent) != 3 {
+		t.Fatalf("expected 1 new notification for the close, got %d total: %+v", len(*sent), *sent)
+	}
+	reply := (*sent)[2]
+	if reply.text != "*@reviewer1* closed the PR" {
+		t.Errorf("close notification text = %q", reply.text)
+	}
+}
+
+func TestHandle_PullRequestClosedWithoutMerge_NoExistingThread_NoOp(t *testing.T) {
+	pr := githubapp.PullRequest{Number: 42, Draft: false, Author: githubapp.User{Login: "emmahsax"}}
+	h, sent, _ := newBotTokenTestEnv(t, pr)
+
+	closed := []byte(`{
+		"action": "closed",
+		"pull_request": {"number": 42, "draft": false, "merged": false, "user": {"login": "emmahsax"}},
+		"repository": {"name": "widgets", "owner": {"login": "acme"}},
+		"installation": {"id": 1},
+		"sender": {"login": "reviewer1"}
+	}`)
+	if err := h.Handle(context.Background(), "pull_request", sign(testSecret, closed), closed); err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if len(*sent) != 0 {
+		t.Errorf("expected no notification when closing a PR with no existing thread (never subscribed), got %+v", *sent)
+	}
+}
+
+func TestHandle_PullRequestMerged_DoesNotAlsoFireClosedNotification(t *testing.T) {
+	pr := githubapp.PullRequest{Number: 42, Draft: false, Author: githubapp.User{Login: "emmahsax"}, HTMLURL: "https://github.com/acme/widgets/pull/42", Title: "Add widget support"}
+	h, sent, _ := newBotTokenTestEnv(t, pr)
+
+	comment := []byte(`{
+		"action": "created",
+		"issue": {"number": 42, "pull_request": {}},
+		"comment": {"user": {"login": "reviewer1"}, "body": "first"},
+		"repository": {"name": "widgets", "owner": {"login": "acme"}},
+		"installation": {"id": 1},
+		"sender": {"login": "reviewer1"}
+	}`)
+	if err := h.Handle(context.Background(), "issue_comment", sign(testSecret, comment), comment); err != nil {
+		t.Fatalf("Handle() setup comment error = %v", err)
+	}
+	if len(*sent) != 2 {
+		t.Fatalf("expected header + reply from the setup comment, got %d: %+v", len(*sent), *sent)
+	}
+
+	merged := []byte(`{
+		"action": "closed",
+		"pull_request": {"number": 42, "draft": false, "merged": true, "user": {"login": "emmahsax"}, "html_url": "https://github.com/acme/widgets/pull/42", "title": "Add widget support"},
+		"repository": {"name": "widgets", "owner": {"login": "acme"}},
+		"installation": {"id": 1},
+		"sender": {"login": "reviewer1"}
+	}`)
+	if err := h.Handle(context.Background(), "pull_request", sign(testSecret, merged), merged); err != nil {
+		t.Fatalf("Handle() merged error = %v", err)
+	}
+
+	if len(*sent) != 3 {
+		t.Fatalf("expected exactly 1 new notification (merge, not also a close), got %d total: %+v", len(*sent), *sent)
+	}
+	reply := (*sent)[2]
+	if reply.text != "*@reviewer1* merged the PR" {
+		t.Errorf("expected only the merge notification, got %q", reply.text)
+	}
+}
+
+func TestHandle_PullRequestReopened_FlatDeliveryNoOp(t *testing.T) {
+	// Incoming-webhook delivery has no thread store, so there's no way to
+	// tell whether the user was ever subscribed — always a silent no-op,
+	// same treatment as REQ-018's title-refresh for this delivery method.
+	pr := githubapp.PullRequest{Number: 42, Draft: false, Author: githubapp.User{Login: "emmahsax"}}
+	env := newTestEnv(t, pr, nil, nil, nil, nil)
+
+	reopened := []byte(`{
+		"action": "reopened",
+		"pull_request": {"number": 42, "draft": false, "user": {"login": "emmahsax"}},
+		"repository": {"name": "widgets", "owner": {"login": "acme"}},
+		"installation": {"id": 1},
+		"sender": {"login": "reviewer1"}
+	}`)
+	if err := env.handler.Handle(context.Background(), "pull_request", sign(testSecret, reopened), reopened); err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if len(env.sent) != 0 {
+		t.Errorf("expected no message for incoming-webhook delivery (no thread store), got %v", env.sent)
+	}
+}
+
 func TestHandle_PullRequestEdited_NonTitleChange_Ignored(t *testing.T) {
 	pr := githubapp.PullRequest{Number: 42, Draft: false, Author: githubapp.User{Login: "emmahsax"}}
 	env := newTestEnv(t, pr, nil, nil, nil, nil)

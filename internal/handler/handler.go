@@ -248,6 +248,18 @@ func (h *Handler) handlePullRequest(ctx context.Context, body []byte) error {
 		return h.refreshThreadHeader(ctx, evt.Repository.Owner.Login, evt.Repository.Name, &evt.PullRequest)
 	}
 
+	// "closed" here means closed-without-merging (abandoned) — a real merge
+	// is also delivered as "closed" (with Merged == true) and already has
+	// its own trigger below; excluding Merged here stops a merge from also
+	// firing this one (REQ-021). REQ-020/REQ-021: subscription can't be
+	// computed the normal way (REQ-001) for reopen/close — the PR hasn't
+	// been commented/reviewed/committed on by this event itself — so an
+	// already-existing Slack thread stands in as proof of prior
+	// subscription instead.
+	if evt.Action == "reopened" || (evt.Action == "closed" && !evt.PullRequest.Merged) {
+		return h.notifyIfThreadExists(ctx, evt.Repository.Owner.Login, evt.Repository.Name, &evt.PullRequest, evt.Sender.Login, evt.Action)
+	}
+
 	var verb, url string
 	switch {
 	case evt.Action == "closed" && evt.PullRequest.Merged:
@@ -382,6 +394,42 @@ func (h *Handler) refreshThreadHeader(ctx context.Context, owner, repo string, p
 	}
 
 	return h.notifier.Update(ctx, ts, buildHeader(owner, repo, pr))
+}
+
+// notifyIfThreadExists implements REQ-020/REQ-021: for a "reopened" or a
+// closed-without-merging pull_request event, REQ-001's normal subscription
+// check doesn't apply — the event itself is neither an authorship, commit,
+// review, nor comment — so an already-existing Slack thread for this PR
+// stands in as proof the user was subscribed before this event. No thread
+// means the user was never notified about this PR, and reopening or closing
+// it alone shouldn't newly subscribe them, so this is a silent no-op rather
+// than falling back to REQ-001's live GitHub API check. This only applies to
+// bot-token delivery (REQ-015/REQ-016) — incoming-webhook delivery has no
+// thread store to check existence against, so it's always a no-op there,
+// consistent with REQ-018's treatment of the same delivery method.
+func (h *Handler) notifyIfThreadExists(ctx context.Context, owner, repo string, pr *githubapp.PullRequest, senderLogin, action string) error {
+	if h.threadStore == nil {
+		return nil
+	}
+	if pr.Draft { // REQ-005
+		return nil
+	}
+
+	key := threadstore.Key(owner, repo, pr.Number)
+	_, found, err := h.threadStore.Get(ctx, key)
+	if err != nil {
+		return fmt.Errorf("look up thread for %s: %w", key, err)
+	}
+	if !found {
+		return nil
+	}
+
+	verb := "reopened the PR"
+	if action == "closed" {
+		verb = "closed the PR"
+	}
+
+	return h.notify(ctx, owner, repo, pr, senderLogin, verb, "", "")
 }
 
 // buildHeader formats the "owner/repo#number (@author):" portion in bold
