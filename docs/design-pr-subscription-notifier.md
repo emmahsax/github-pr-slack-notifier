@@ -1,8 +1,8 @@
 ---
 title: PR Subscription Slack Notifier
-version: 1.1
+version: 1.2
 date_created: 2026-08-31
-last_updated: 2026-09-01
+last_updated: 2026-09-18
 owner: emmahsax (personal project)
 authored_by: Claude Code (Anthropic AI coding agent), directed interactively by the owner
 tags: [design, architecture, infrastructure, github, slack, lambda]
@@ -61,6 +61,7 @@ This document specifies the requirements, subscription/notification semantics, a
 - **REQ-008**: The user being requested for review, or @mentioned, MUST NOT independently trigger a notification, per REQ-002/REQ-003 (no subscription exists) — this holds even though notifying on review-requests and mentions is common behavior in similar commercial tools, which this system deliberately does NOT replicate.
 - **REQ-011**: REQ-006 triggers are NOT restricted to open PRs. A merged PR remains eligible for further notifications (e.g., a comment posted after merge) as long as it is subscribed and non-draft — merging does not end a subscription or exempt the PR from future trigger events.
 - **REQ-012**: Authorship alone (REQ-001a) is sufficient subscription for the "PR is merged" trigger (REQ-006) — an author MUST be notified when their own PR is merged, independent of whether they also reviewed, commented, or committed further.
+- **REQ-019**: For a subscribed, non-draft PR, the system MUST notify the user when a new commit is pushed to the PR's head branch (GitHub's `pull_request` `synchronize` action), UNLESS the pusher is the user themself, per the same self-notification exclusion already applied to comments (handleIssueComment/handlePullRequestReviewComment) and reviews (handlePullRequestReview). Unlike REQ-012's merge exception, there is no "notify regardless of who pushed" carve-out here — a self-push is always suppressed. The pusher is identified via the webhook payload's top-level `sender`, the same field GitHub uses for every other event this system already keys self-exclusion off of; the payload does not enumerate individual pushed commits' authors, so a force-push or a squash containing commits from multiple people is still attributed to whoever performed the push.
 
 ### Scope / Configuration
 
@@ -106,6 +107,7 @@ Delivered by the GitHub App installation. Relevant event types and the fields th
 | `pull_request` | `action == "closed"` and `pull_request.merged == true` | `pull_request.draft`, `pull_request.merged`, `pull_request.merged_by.login` |
 | `pull_request` | `action == "labeled"` | `pull_request.draft`, `label.name` |
 | `pull_request` | `action == "unlabeled"` | `pull_request.draft`, `label.name` |
+| `pull_request` | `action == "synchronize"` | `pull_request.draft`, `sender.login`, `after` (new head commit SHA), `repository.html_url` (used to build the commit permalink: `{repository.html_url}/commit/{after}`) |
 | `pull_request` | `action == "edited"`, `changes.title` present | `pull_request.title`, `pull_request.html_url` (REQ-018 thread header refresh, not a notification) |
 
 All handlers MUST discard the event early if `pull_request.draft == true` (or, for `issue_comment`, if the referenced PR is a draft — requires fetching the PR object since `issue_comment` payloads do not include `draft`).
@@ -210,6 +212,9 @@ Per GUD-005, secret values (`github_app_private_key`, `github_webhook_secret`, `
 - **AC-020**: Given a non-draft PR the user is subscribed to, When a label is removed from it, Then the user receives a Slack notification, symmetric with AC for label addition.
 - **AC-021**: Given a non-draft PR the user is subscribed to, When someone else submits a review with state `"commented"` and an empty or whitespace-only body (CON-001), Then no Slack notification is sent.
 - **AC-022**: Given a non-draft PR the user is subscribed to, When someone else submits a review with state `"approved"` or `"changes requested"` and an empty body, Then the user still receives a Slack notification — the empty-body exception in CON-001 applies only to the "commented" state.
+- **AC-023**: Given a non-draft PR the user is subscribed to, When someone else pushes a new commit to it (`pull_request` `synchronize`), Then the user receives a Slack notification whose link points to that commit's GitHub HTML URL (`{repository.html_url}/commit/{after}`), not the PR itself.
+- **AC-024**: Given a draft PR, When a commit is pushed to it, Then no Slack notification is sent (REQ-005/REQ-019).
+- **AC-025**: Given a non-draft PR, When the user themself pushes a commit to it, Then no Slack notification is sent, regardless of whether the user authored the PR (REQ-019's self-push exclusion has no merge-style "notify anyway" carve-out).
 
 ## 6. Test Automation Strategy
 

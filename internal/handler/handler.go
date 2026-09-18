@@ -248,7 +248,7 @@ func (h *Handler) handlePullRequest(ctx context.Context, body []byte) error {
 		return h.refreshThreadHeader(ctx, evt.Repository.Owner.Login, evt.Repository.Name, &evt.PullRequest)
 	}
 
-	var verb string
+	var verb, url string
 	switch {
 	case evt.Action == "closed" && evt.PullRequest.Merged:
 		verb = "merged the PR" // REQ-011/REQ-012: notified regardless of who merged it
@@ -262,6 +262,15 @@ func (h *Handler) handlePullRequest(ctx context.Context, body []byte) error {
 			return nil
 		}
 		verb = fmt.Sprintf("removed the %q label", evt.Label.Name)
+	case evt.Action == "synchronize":
+		if evt.PullRequest.Draft { // REQ-005
+			return nil
+		}
+		if evt.Sender.Login == h.cfg.GitHubUsername {
+			return nil // don't notify the user about their own commit
+		}
+		verb = "pushed a commit"
+		url = evt.Repository.HTMLURL + "/commit/" + evt.After
 	default:
 		return nil // e.g. "opened", "closed" without merge, "ready_for_review" — not triggers (REQ-007)
 	}
@@ -280,7 +289,7 @@ func (h *Handler) handlePullRequest(ctx context.Context, body []byte) error {
 		return nil
 	}
 
-	return h.notify(ctx, evt.Repository.Owner.Login, evt.Repository.Name, pr, evt.Sender.Login, verb, "", "")
+	return h.notify(ctx, evt.Repository.Owner.Login, evt.Repository.Name, pr, evt.Sender.Login, verb, "", url)
 }
 
 // notify sends "@senderLogin verb[: detail]" to Slack, grouping it into the

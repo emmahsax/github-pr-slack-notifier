@@ -5,8 +5,9 @@ import "github.com/emmahsax/github-pr-slack-notifier/internal/githubapp"
 // Repository is the subset of GitHub's repository object present on every
 // webhook payload this notifier handles.
 type Repository struct {
-	Name  string         `json:"name"`
-	Owner githubapp.User `json:"owner"`
+	Name    string         `json:"name"`
+	Owner   githubapp.User `json:"owner"`
+	HTMLURL string         `json:"html_url"`
 }
 
 // Installation identifies which GitHub App installation delivered an event,
@@ -65,11 +66,15 @@ type PullRequestReviewCommentEvent struct {
 }
 
 // PullRequestEvent is the payload for the "pull_request" event, covering
-// the "closed" (merge), "labeled", and "edited" actions this notifier
+// the "closed" (merge), "labeled", "unlabeled", "synchronize" (a new commit
+// pushed to the PR's head branch), and "edited" actions this notifier
 // handles. Changes.Title is non-nil only when the title itself was part of
 // the edit (GitHub omits keys in "changes" for anything that didn't change).
+// After is only present on "synchronize" — it's the SHA of the new head
+// commit produced by the push.
 type PullRequestEvent struct {
 	Action  string `json:"action"`
+	After   string `json:"after"`
 	Changes struct {
 		Title *struct {
 			From string `json:"from"`
