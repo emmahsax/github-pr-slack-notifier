@@ -21,12 +21,11 @@ jobs:
     needs: [ setup ]
     permissions:
       contents: read
-    uses: emmahsax/github-actions/.github/workflows/go-test.yml@install-goreleaser-option
+    uses: emmahsax/github-actions/.github/workflows/go-test.yml@main
     with:
       branch: ${{ needs.setup.outputs.branch }}
       build_command: task build
       go_version: 1.26
-      install_goreleaser: true
 
   terraform-validate:
     needs: [ setup ]
