@@ -66,7 +66,9 @@ task test    # go test ./...
 
 This module is meant to be consumed by reference (a git source + version tag), not copied. Grab a tagged release in this repo and either download the `lambda.zip` from GitHub (each release also includes a `checksums.txt`) or build it yourself locally. Then you can call the existing Terraform module in your AWS Terraform config — for example, a thin block in a company's shared infra repo, or your own personal one.
 
-The module itself never talks to SSM (or any other secrets backend) — it just takes plaintext values. If you're using SSM, resolve them in your own consumer config first:
+The module itself never talks to SSM (or any other secrets backend) — it just takes plaintext values. If you're using SSM, resolve them in your own consumer config first.
+
+NOTE: the example below is using v0.0.6 as an example. You can use whichever [existing release](https://github.com/emmahsax/github-pr-slack-notifier/releases) you wish.
 
 ```hcl
 data "aws_ssm_parameter" "github_app_private_key" {
@@ -90,7 +92,7 @@ module "pr_slack_notifier" {
   # evaluated, so interpolation is never allowed in `source`, not even from
   # a local. Update this by hand to match lambda_source.github_release_version below when
   # bumping versions; nothing enforces the two staying in sync.
-  source = "git::https://github.com/emmahsax/github-pr-slack-notifier.git//terraform/module?ref=v0.0.7"
+  source = "git::https://github.com/emmahsax/github-pr-slack-notifier.git//terraform/module?ref=v0.0.6"
 
   github = {
     app_id          = "123456"
@@ -110,7 +112,7 @@ module "pr_slack_notifier" {
     github_release_repo = "emmahsax/github-pr-slack-notifier"
 
     # Keep this matching source's ref above, by hand.
-    github_release_version = "v0.0.7"
+    github_release_version = "v0.0.6"
 
     zip_path = "${path.module}/../../dist/lambda.zip"
   }
@@ -214,4 +216,4 @@ When interacting with this repository, please follow [Contributor Covenant's Cod
 To make a new release:
 
 1. Merge the pull request via the big green button
-1. Trigger a new workflow from [GitHub Actions](https://github.com/emmahsax/github-pr-slack-notifier/actions/workflows/release.yml) and pass in the next sensible semantic version. [GoReleaser](https://goreleaser.com) builds and publishes `lambda.zip` and `checksums.txt`
+1. Trigger a new workflow from [GitHub Actions](https://github.com/emmahsax/github-pr-slack-notifier/actions/workflows/release.yml) and pass in the next sensible semantic version (including the `v` prefix). [GoReleaser](https://goreleaser.com) builds and publishes `lambda.zip` and `checksums.txt`

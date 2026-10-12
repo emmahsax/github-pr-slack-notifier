@@ -1,3 +1,4 @@
+# Keep the build flags and zip contents in sync with the `build` task in Taskfile.yml, which builds lambda.zip locally
 version: 2
 project_name: github-pr-slack-notifier
 

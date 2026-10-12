@@ -6,6 +6,7 @@ tasks:
     cmds:
       - task --list-all
 
+  # Keep the build flags and zip contents in sync with .goreleaser.yaml, which builds the released lambda.zip
   build:
     desc: Build the Lambda deployment package (dist/lambda.zip)
     cmds:
