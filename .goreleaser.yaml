@@ -1,21 +1,31 @@
 version: 2
 project_name: github-pr-slack-notifier
-builds:
-  - id: lambda
-    main: ./cmd/lambda
-    binary: bootstrap
-    env: [CGO_ENABLED=0]
-    flags: [-trimpath]
-    goos: [linux]
-    goarch: [arm64]
+
 archives:
-  - formats: [zip]
-    ids: [lambda]
-    name_template: lambda          # produces lambda.zip, which the Terraform module downloads
-    wrap_in_directory: false       # bootstrap must be at the zip root
-    files:
+  - files:
       - LICENSE.md
-checksum:
-  name_template: checksums.txt
+    formats:
+      - zip
+    ids:
+      - lambda
+    name_template: lambda     # Produces lambda.zip, which the Terraform module downloads
+    wrap_in_directory: false  # Bootstrap file must be at the zip root
+
+builds:
+  - binary: bootstrap
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    goarch:
+      - arm64
+    goos:
+      - linux
+    id: lambda
+    main: ./cmd/lambda
+
 changelog:
   use: github-native
+
+checksum:
+  name_template: checksums.txt
