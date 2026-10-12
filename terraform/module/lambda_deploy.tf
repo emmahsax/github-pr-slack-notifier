@@ -42,8 +42,13 @@ locals {
 resource "local_file" "lambda_zip_copy" {
   count = local.lambda_zip_exists ? 1 : 0
 
-  filename       = local.lambda_deploy_zip_path
-  content_base64 = filebase64(var.lambda_source.zip_path)
+  filename = local.lambda_deploy_zip_path
+  # wrapped in sensitive() purely to keep the zip's full base64 content out of
+  # plan/apply output -- content_base64 isn't actually secret, but
+  # hashicorp/local doesn't mark it sensitive in its own schema, so without
+  # this the plan prints the entire zip (several MB of base64) inline, which
+  # is large enough that some CI/runner log viewers fail to render it.
+  content_base64 = sensitive(filebase64(var.lambda_source.zip_path))
 }
 
 # Tier 2: only fetched when var.lambda_source.github_release_version is set AND no local
@@ -60,6 +65,8 @@ data "http" "lambda_release_zip" {
 resource "local_file" "lambda_release_zip" {
   count = length(data.http.lambda_release_zip) > 0 ? 1 : 0
 
-  filename       = local.lambda_deploy_zip_path
-  content_base64 = data.http.lambda_release_zip[0].response_body_base64
+  filename = local.lambda_deploy_zip_path
+  # see the sensitive() comment on local_file.lambda_zip_copy above -- same
+  # reasoning applies here.
+  content_base64 = sensitive(data.http.lambda_release_zip[0].response_body_base64)
 }
