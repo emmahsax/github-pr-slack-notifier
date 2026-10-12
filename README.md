@@ -57,6 +57,8 @@ Same as the GitHub secrets: pass the resulting token/URL to the module as `slack
 
 ## Building Locally
 
+Building requires [GoReleaser](https://goreleaser.com/install/) (in addition to [Task](https://taskfile.dev)).
+
 ```sh
 task build   # produces dist/lambda.zip (arm64, provided.al2023)
 task test    # go test ./...
@@ -64,7 +66,7 @@ task test    # go test ./...
 
 ## Deploying
 
-This module is meant to be consumed by reference (a git source + version tag), not copied. Grab a tagged release in this repo and either download the `lambda.zip` from GitHub or build it yourself locally. Then you can call the existing Terraform module in your AWS Terraform config — for example, a thin block in a company's shared infra repo, or your own personal one.
+This module is meant to be consumed by reference (a git source + version tag), not copied. Grab a tagged release in this repo and either download the `lambda.zip` from GitHub (each release also includes a `checksums.txt`) or build it yourself locally. Then you can call the existing Terraform module in your AWS Terraform config — for example, a thin block in a company's shared infra repo, or your own personal one.
 
 The module itself never talks to SSM (or any other secrets backend) — it just takes plaintext values. If you're using SSM, resolve them in your own consumer config first:
 
@@ -90,7 +92,7 @@ module "pr_slack_notifier" {
   # evaluated, so interpolation is never allowed in `source`, not even from
   # a local. Update this by hand to match lambda_source.github_release_version below when
   # bumping versions; nothing enforces the two staying in sync.
-  source = "git::https://github.com/emmahsax/github-pr-slack-notifier.git//terraform/module?ref=v0.0.6"
+  source = "git::https://github.com/emmahsax/github-pr-slack-notifier.git//terraform/module?ref=v0.0.7"
 
   github = {
     app_id          = "123456"
@@ -110,7 +112,7 @@ module "pr_slack_notifier" {
     github_release_repo = "emmahsax/github-pr-slack-notifier"
 
     # Keep this matching source's ref above, by hand.
-    github_release_version = "v0.0.6"
+    github_release_version = "v0.0.7"
 
     zip_path = "${path.module}/../../dist/lambda.zip"
   }
@@ -213,6 +215,5 @@ When interacting with this repository, please follow [Contributor Covenant's Cod
 
 To make a new release:
 
-1. Verify `main` has or will have the newest version in the `main.go` file
 1. Merge the pull request via the big green button
-3. Trigger a new workflow from [GitHub Actions](https://github.com/emmahsax/github-pr-slack-notifier/actions/workflows/release.yml) and pass in the next sensible semantic version
+1. Trigger a new workflow from [GitHub Actions](https://github.com/emmahsax/github-pr-slack-notifier/actions/workflows/release.yml) and pass in the next sensible semantic version. [GoReleaser](https://goreleaser.com) builds and publishes `lambda.zip` and `checksums.txt`

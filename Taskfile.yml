@@ -7,12 +7,9 @@ tasks:
       - task --list-all
 
   build:
-    desc: Build the Lambda deployment package (dist/lambda.zip)
+    desc: Build the Lambda deployment package (dist/lambda.zip) with GoReleaser
     cmds:
-      - GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -o dist/bootstrap ./cmd/lambda
-      - cp LICENSE.md dist/LICENSE.md
-      - cd dist && zip -q -X lambda.zip bootstrap LICENSE.md
-      - rm dist/bootstrap dist/LICENSE.md
+      - goreleaser release --snapshot --clean --skip=publish
 
   clean:
     desc: Remove build artifacts

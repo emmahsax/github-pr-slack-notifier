@@ -24,7 +24,6 @@ jobs:
     uses: emmahsax/github-actions/.github/workflows/go-test.yml@main
     with:
       branch: ${{ needs.setup.outputs.branch }}
-      build_command: task build
       go_version: 1.26
 
   terraform-validate:
