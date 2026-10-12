@@ -7,7 +7,7 @@ tasks:
       - task --list-all
 
   build:
-    desc: Build the Lambda deployment package (dist/lambda.zip) with GoReleaser
+    desc: Build the Lambda deployment package to dist/ (uses GoReleaser)
     cmds:
       - goreleaser release --snapshot --clean --skip=publish
 
