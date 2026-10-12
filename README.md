@@ -57,6 +57,8 @@ Same as the GitHub secrets: pass the resulting token/URL to the module as `slack
 
 ## Building Locally
 
+Building requires [GoReleaser](https://goreleaser.com/install/) and [Task](https://taskfile.dev).
+
 ```sh
 task build   # produces dist/lambda.zip (arm64, provided.al2023)
 task test    # go test ./...
@@ -66,7 +68,9 @@ task test    # go test ./...
 
 This module is meant to be consumed by reference (a git source + version tag), not copied. Grab a tagged release in this repo and either download the `lambda.zip` from GitHub or build it yourself locally. Then you can call the existing Terraform module in your AWS Terraform config — for example, a thin block in a company's shared infra repo, or your own personal one.
 
-The module itself never talks to SSM (or any other secrets backend) — it just takes plaintext values. If you're using SSM, resolve them in your own consumer config first:
+The module itself never talks to SSM (or any other secrets backend) — it just takes plaintext values. If you're using SSM, resolve them in your own consumer config first.
+
+NOTE: the example below is using v0.0.6 as an example. You can use whichever [existing release](https://github.com/emmahsax/github-pr-slack-notifier/releases) you wish.
 
 ```hcl
 data "aws_ssm_parameter" "github_app_private_key" {
@@ -213,6 +217,5 @@ When interacting with this repository, please follow [Contributor Covenant's Cod
 
 To make a new release:
 
-1. Verify `main` has or will have the newest version in the `main.go` file
 1. Merge the pull request via the big green button
-3. Trigger a new workflow from [GitHub Actions](https://github.com/emmahsax/github-pr-slack-notifier/actions/workflows/release.yml) and pass in the next sensible semantic version
+1. Trigger a new workflow from [GitHub Actions](https://github.com/emmahsax/github-pr-slack-notifier/actions/workflows/release.yml) and pass in the next sensible semantic version (including the `v` prefix). [GoReleaser](https://goreleaser.com) builds and publishes `lambda.zip` and `checksums.txt`
