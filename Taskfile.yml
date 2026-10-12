@@ -17,9 +17,9 @@ tasks:
       - rm -rf dist
 
   format:
-    desc: Run gofmt on all Go source files
+    desc: Run gofmt (or go fmt) on all Go source files and terraform fmt on all Terraform files
     cmds:
-      - go fmt ./...
+      - gofmt -w -l . || go fmt ./...
       - terraform fmt --recursive
 
   test:

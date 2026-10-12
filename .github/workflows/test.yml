@@ -26,6 +26,7 @@ jobs:
       branch: ${{ needs.setup.outputs.branch }}
       build_command: task build
       go_version: 1.26
+      test_command: CGO_ENABLED=0 go test -trimpath -v ./...
 
   terraform-validate:
     needs: [ setup ]
