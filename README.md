@@ -57,6 +57,8 @@ Same as the GitHub secrets: pass the resulting token/URL to the module as `slack
 
 ## Building Locally
 
+Building requires [GoReleaser](https://goreleaser.com/install/) (in addition to [Task](https://taskfile.dev)).
+
 ```sh
 task build   # produces dist/lambda.zip (arm64, provided.al2023)
 task test    # go test ./...
