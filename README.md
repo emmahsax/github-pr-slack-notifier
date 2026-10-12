@@ -66,7 +66,7 @@ task test    # go test ./...
 
 ## Deploying
 
-This module is meant to be consumed by reference (a git source + version tag), not copied. Grab a tagged release in this repo and either download the `lambda.zip` from GitHub (each release also includes a `checksums.txt`) or build it yourself locally. Then you can call the existing Terraform module in your AWS Terraform config — for example, a thin block in a company's shared infra repo, or your own personal one.
+This module is meant to be consumed by reference (a git source + version tag), not copied. Grab a tagged release in this repo and either download the `lambda.zip` from GitHub or build it yourself locally. Then you can call the existing Terraform module in your AWS Terraform config — for example, a thin block in a company's shared infra repo, or your own personal one.
 
 The module itself never talks to SSM (or any other secrets backend) — it just takes plaintext values. If you're using SSM, resolve them in your own consumer config first.
 

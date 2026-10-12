@@ -22,7 +22,10 @@ builds:
     goos:
       - linux
     id: lambda
+    ldflags:
+      - -s -w
     main: ./cmd/lambda
+    mod_timestamp: "{{ .CommitTimestamp }}"
 
 changelog:
   use: github-native
