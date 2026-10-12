@@ -3,7 +3,9 @@ project_name: github-pr-slack-notifier
 
 archives:
   - files:
-      - LICENSE.md
+      - src: LICENSE.md
+        info:
+          mtime: "{{ .CommitDate }}"  # Fixed date so the zip bytes (and Terraform's source_code_hash) don't change per checkout
     formats:
       - zip
     ids:
