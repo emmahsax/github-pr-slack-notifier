@@ -43,7 +43,8 @@ resource "local_file" "lambda_zip_copy" {
   count = local.lambda_zip_exists ? 1 : 0
 
   filename = local.lambda_deploy_zip_path
-  # wrapped in sensitive() purely to keep the zip's full base64 content out of
+
+  # Wrapped in sensitive() purely to keep the zip's full base64 content out of
   # plan/apply output -- content_base64 isn't actually secret, but
   # hashicorp/local doesn't mark it sensitive in its own schema, so without
   # this the plan prints the entire zip (several MB of base64) inline, which
@@ -66,7 +67,8 @@ resource "local_file" "lambda_release_zip" {
   count = length(data.http.lambda_release_zip) > 0 ? 1 : 0
 
   filename = local.lambda_deploy_zip_path
-  # see the sensitive() comment on local_file.lambda_zip_copy above -- same
+
+  # See the sensitive() comment on local_file.lambda_zip_copy above -- same
   # reasoning applies here.
   content_base64 = sensitive(data.http.lambda_release_zip[0].response_body_base64)
 }
