@@ -185,10 +185,11 @@ func (h *Handler) handlePullRequestReview(ctx context.Context, body []byte) erro
 	if evt.PullRequest.Draft { // REQ-005
 		return nil
 	}
-	if evt.Review.User.Login == h.cfg.GitHubUsername {
-		return nil // don't notify the user about their own review
-	}
-
+	// Unlike comments (handleIssueComment/handlePullRequestReviewComment) and
+	// commits (REQ-019), a self-submitted review is NOT excluded (REQ-022) —
+	// the user wants a Slack record of their own approve/request-changes/
+	// comment verdicts on a subscribed PR, same as they'd get for anyone
+	// else's.
 	var verb string
 	switch evt.Review.State {
 	case "approved":

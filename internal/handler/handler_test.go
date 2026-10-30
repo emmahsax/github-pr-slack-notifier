@@ -446,22 +446,54 @@ func TestHandle_PullRequestReview_ApprovedWithEmptyBodyStillNotifies(t *testing.
 	}
 }
 
-func TestHandle_PullRequestReview_OwnReviewSuppressed(t *testing.T) {
-	env := newTestEnv(t, githubapp.PullRequest{}, nil, nil, nil, nil)
+// REQ-022: unlike comments and commits, a self-submitted review still
+// notifies — the user wants a Slack record of their own review verdicts.
+func TestHandle_PullRequestReview_OwnReviewStillNotifies(t *testing.T) {
+	reviews := []githubapp.Review{{User: githubapp.User{Login: "emmahsax"}}}
+	env := newTestEnv(t, githubapp.PullRequest{}, nil, reviews, nil, nil)
 
 	body := []byte(`{
 		"action": "submitted",
-		"review": {"state": "approved", "user": {"login": "emmahsax"}},
+		"review": {"state": "approved", "user": {"login": "emmahsax"}, "html_url": "https://github.com/acme/widgets/pull/42#pullrequestreview-1"},
+		"pull_request": {"number": 42, "draft": false, "user": {"login": "someone-else"}, "html_url": "https://github.com/acme/widgets/pull/42", "title": "Add widget support"},
+		"repository": {"name": "widgets", "owner": {"login": "acme"}},
+		"installation": {"id": 1},
+		"sender": {"login": "emmahsax"}
+	}`)
+
+	if err := env.handler.Handle(context.Background(), "pull_request_review", sign(testSecret, body), body); err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if len(env.sent) != 1 {
+		t.Fatalf("expected 1 notification about your own review, got %d: %v", len(env.sent), env.sent)
+	}
+	want := "*<https://github.com/acme/widgets/pull/42|acme/widgets#42> (@someone-else):* Add widget support\n> *@emmahsax* <https://github.com/acme/widgets/pull/42#pullrequestreview-1|approved the PR>"
+	if env.sent[0] != want {
+		t.Errorf("notification text = %q, want %q", env.sent[0], want)
+	}
+}
+
+// CON-001's empty-body suppression for a contentless "commented" review
+// applies regardless of who submitted it, including the user themself.
+func TestHandle_PullRequestReview_OwnCommentedWithEmptyBodySuppressed(t *testing.T) {
+	pr := githubapp.PullRequest{Number: 42, Draft: false, Author: githubapp.User{Login: "someone-else"}}
+	reviews := []githubapp.Review{{User: githubapp.User{Login: "emmahsax"}}}
+	env := newTestEnv(t, pr, nil, reviews, nil, nil)
+
+	body := []byte(`{
+		"action": "submitted",
+		"review": {"state": "commented", "user": {"login": "emmahsax"}, "body": ""},
 		"pull_request": {"number": 42, "draft": false, "user": {"login": "someone-else"}},
 		"repository": {"name": "widgets", "owner": {"login": "acme"}},
-		"installation": {"id": 1}
+		"installation": {"id": 1},
+		"sender": {"login": "emmahsax"}
 	}`)
 
 	if err := env.handler.Handle(context.Background(), "pull_request_review", sign(testSecret, body), body); err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
 	if len(env.sent) != 0 {
-		t.Errorf("expected no notification about your own review, got %v", env.sent)
+		t.Errorf("expected no notification for your own contentless 'commented' review, got %v", env.sent)
 	}
 }
 
