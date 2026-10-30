@@ -1,6 +1,6 @@
 # GitHub PR → Slack Notifier
 
-A project designed to provide Slack notifications when GitHub PRs change: get pinged in Slack when a pull request you're **"subscribed"** to gets a comment, an approval, a changes-requested review, a merge, a new commit, or a label added/removed — but only for PRs that are ready for review (not draft), and only when you took an explicit prior action on that PR (authored it, pushed a commit, reviewed it, or commented on it). Being requested for review or @mentioned does *not* count as "subscribed". None of these notifications exclude your own actions — comment, approve, request changes, push a commit, or label a PR yourself, and it still shows up in Slack, so the thread is a full activity record rather than an others-only feed.
+A project designed to provide Slack notifications when GitHub PRs change: get pinged in Slack when a pull request you're **"subscribed"** to gets a comment, an approval, a changes-requested review, a merge, a new commit, or a label added/removed — but only for PRs that are ready for review (not draft), and only when you took an explicit prior action on that PR (authored it, pushed a commit, reviewed it, or commented on it). Being requested for review or @mentioned does *not* count as "subscribed".
 
 Full requirements and design rationale: [`docs/design-pr-subscription-notifier.md`](docs/design-pr-subscription-notifier.md).
 
