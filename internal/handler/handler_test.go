@@ -157,23 +157,30 @@ func TestHandle_IssueComment_NotSubscribedSuppressed(t *testing.T) {
 	}
 }
 
-func TestHandle_IssueComment_OwnCommentSuppressed(t *testing.T) {
-	pr := githubapp.PullRequest{Number: 42, Draft: false, Author: githubapp.User{Login: "emmahsax"}}
+// REQ-022 (extended): a self-authored comment still notifies, like a
+// self-submitted review — a full activity record, not a self-exclusion.
+func TestHandle_IssueComment_OwnCommentStillNotifies(t *testing.T) {
+	pr := githubapp.PullRequest{Number: 42, Draft: false, Author: githubapp.User{Login: "emmahsax"}, HTMLURL: "https://github.com/acme/widgets/pull/42", Title: "Add widget support"}
 	env := newTestEnv(t, pr, nil, nil, nil, nil)
 
 	body := []byte(`{
 		"action": "created",
 		"issue": {"number": 42, "pull_request": {}},
-		"comment": {"user": {"login": "emmahsax"}},
+		"comment": {"user": {"login": "emmahsax"}, "body": "noting this for later", "html_url": "https://github.com/acme/widgets/pull/42#issuecomment-999"},
 		"repository": {"name": "widgets", "owner": {"login": "acme"}},
-		"installation": {"id": 1}
+		"installation": {"id": 1},
+		"sender": {"login": "emmahsax"}
 	}`)
 
 	if err := env.handler.Handle(context.Background(), "issue_comment", sign(testSecret, body), body); err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
-	if len(env.sent) != 0 {
-		t.Errorf("expected no notification about your own comment, got %v", env.sent)
+	if len(env.sent) != 1 {
+		t.Fatalf("expected 1 notification about your own comment, got %d: %v", len(env.sent), env.sent)
+	}
+	want := "*<https://github.com/acme/widgets/pull/42|acme/widgets#42> (@emmahsax):* Add widget support\n> *@emmahsax* <https://github.com/acme/widgets/pull/42#issuecomment-999|commented>: noting this for later"
+	if env.sent[0] != want {
+		t.Errorf("notification text = %q, want %q", env.sent[0], want)
 	}
 }
 
@@ -267,14 +274,15 @@ func TestHandle_PullRequestReviewComment_NotSubscribedSuppressed(t *testing.T) {
 	}
 }
 
-func TestHandle_PullRequestReviewComment_OwnCommentSuppressed(t *testing.T) {
-	pr := githubapp.PullRequest{Number: 42, Draft: false, Author: githubapp.User{Login: "emmahsax"}}
+// REQ-022 (extended): a self-authored inline comment still notifies.
+func TestHandle_PullRequestReviewComment_OwnCommentStillNotifies(t *testing.T) {
+	pr := githubapp.PullRequest{Number: 42, Draft: false, Author: githubapp.User{Login: "emmahsax"}, HTMLURL: "https://github.com/acme/widgets/pull/42", Title: "Add widget support"}
 	env := newTestEnv(t, pr, nil, nil, nil, nil)
 
 	body := []byte(`{
 		"action": "created",
-		"comment": {"user": {"login": "emmahsax"}, "body": "nit"},
-		"pull_request": {"number": 42, "draft": false, "user": {"login": "emmahsax"}},
+		"comment": {"user": {"login": "emmahsax"}, "body": "nit: rename this", "html_url": "https://github.com/acme/widgets/pull/42#discussion_r123456"},
+		"pull_request": {"number": 42, "draft": false, "title": "Add widget support", "user": {"login": "emmahsax"}, "html_url": "https://github.com/acme/widgets/pull/42"},
 		"repository": {"name": "widgets", "owner": {"login": "acme"}},
 		"installation": {"id": 1},
 		"sender": {"login": "emmahsax"}
@@ -283,8 +291,12 @@ func TestHandle_PullRequestReviewComment_OwnCommentSuppressed(t *testing.T) {
 	if err := env.handler.Handle(context.Background(), "pull_request_review_comment", sign(testSecret, body), body); err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
-	if len(env.sent) != 0 {
-		t.Errorf("expected no notification about your own comment, got %v", env.sent)
+	if len(env.sent) != 1 {
+		t.Fatalf("expected 1 notification about your own comment, got %d: %v", len(env.sent), env.sent)
+	}
+	want := "*<https://github.com/acme/widgets/pull/42|acme/widgets#42> (@emmahsax):* Add widget support\n> *@emmahsax* <https://github.com/acme/widgets/pull/42#discussion_r123456|commented>: nit: rename this"
+	if env.sent[0] != want {
+		t.Errorf("notification text = %q, want %q", env.sent[0], want)
 	}
 }
 
@@ -446,22 +458,54 @@ func TestHandle_PullRequestReview_ApprovedWithEmptyBodyStillNotifies(t *testing.
 	}
 }
 
-func TestHandle_PullRequestReview_OwnReviewSuppressed(t *testing.T) {
-	env := newTestEnv(t, githubapp.PullRequest{}, nil, nil, nil, nil)
+// REQ-022: unlike comments and commits, a self-submitted review still
+// notifies — the user wants a Slack record of their own review verdicts.
+func TestHandle_PullRequestReview_OwnReviewStillNotifies(t *testing.T) {
+	reviews := []githubapp.Review{{User: githubapp.User{Login: "emmahsax"}}}
+	env := newTestEnv(t, githubapp.PullRequest{}, nil, reviews, nil, nil)
 
 	body := []byte(`{
 		"action": "submitted",
-		"review": {"state": "approved", "user": {"login": "emmahsax"}},
+		"review": {"state": "approved", "user": {"login": "emmahsax"}, "html_url": "https://github.com/acme/widgets/pull/42#pullrequestreview-1"},
+		"pull_request": {"number": 42, "draft": false, "user": {"login": "someone-else"}, "html_url": "https://github.com/acme/widgets/pull/42", "title": "Add widget support"},
+		"repository": {"name": "widgets", "owner": {"login": "acme"}},
+		"installation": {"id": 1},
+		"sender": {"login": "emmahsax"}
+	}`)
+
+	if err := env.handler.Handle(context.Background(), "pull_request_review", sign(testSecret, body), body); err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if len(env.sent) != 1 {
+		t.Fatalf("expected 1 notification about your own review, got %d: %v", len(env.sent), env.sent)
+	}
+	want := "*<https://github.com/acme/widgets/pull/42|acme/widgets#42> (@someone-else):* Add widget support\n> *@emmahsax* <https://github.com/acme/widgets/pull/42#pullrequestreview-1|approved the PR>"
+	if env.sent[0] != want {
+		t.Errorf("notification text = %q, want %q", env.sent[0], want)
+	}
+}
+
+// CON-001's empty-body suppression for a contentless "commented" review
+// applies regardless of who submitted it, including the user themself.
+func TestHandle_PullRequestReview_OwnCommentedWithEmptyBodySuppressed(t *testing.T) {
+	pr := githubapp.PullRequest{Number: 42, Draft: false, Author: githubapp.User{Login: "someone-else"}}
+	reviews := []githubapp.Review{{User: githubapp.User{Login: "emmahsax"}}}
+	env := newTestEnv(t, pr, nil, reviews, nil, nil)
+
+	body := []byte(`{
+		"action": "submitted",
+		"review": {"state": "commented", "user": {"login": "emmahsax"}, "body": ""},
 		"pull_request": {"number": 42, "draft": false, "user": {"login": "someone-else"}},
 		"repository": {"name": "widgets", "owner": {"login": "acme"}},
-		"installation": {"id": 1}
+		"installation": {"id": 1},
+		"sender": {"login": "emmahsax"}
 	}`)
 
 	if err := env.handler.Handle(context.Background(), "pull_request_review", sign(testSecret, body), body); err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
 	if len(env.sent) != 0 {
-		t.Errorf("expected no notification about your own review, got %v", env.sent)
+		t.Errorf("expected no notification for your own contentless 'commented' review, got %v", env.sent)
 	}
 }
 
@@ -637,14 +681,17 @@ func TestHandle_PullRequest_Synchronize_DraftSuppressed(t *testing.T) {
 	}
 }
 
-func TestHandle_PullRequest_Synchronize_OwnCommitSuppressed(t *testing.T) {
-	pr := githubapp.PullRequest{Number: 42, Draft: false, Author: githubapp.User{Login: "someone-else"}}
-	env := newTestEnv(t, pr, nil, nil, nil, nil)
+// REQ-022 (extended): a self-pushed commit still notifies — the user wants
+// a full activity record regardless of who performed the action.
+func TestHandle_PullRequest_Synchronize_OwnCommitStillNotifies(t *testing.T) {
+	pr := githubapp.PullRequest{Number: 42, Draft: false, Author: githubapp.User{Login: "someone-else"}, HTMLURL: "https://github.com/acme/widgets/pull/42", Title: "Add widget support"}
+	commits := []githubapp.Commit{{Author: &githubapp.User{Login: "emmahsax"}}}
+	env := newTestEnv(t, pr, commits, nil, nil, nil)
 
 	body := []byte(`{
 		"action": "synchronize",
 		"after": "abc123def456",
-		"pull_request": {"number": 42, "draft": false, "user": {"login": "someone-else"}},
+		"pull_request": {"number": 42, "draft": false, "user": {"login": "someone-else"}, "html_url": "https://github.com/acme/widgets/pull/42", "title": "Add widget support"},
 		"repository": {"name": "widgets", "owner": {"login": "acme"}, "html_url": "https://github.com/acme/widgets"},
 		"installation": {"id": 1},
 		"sender": {"login": "emmahsax"}
@@ -653,8 +700,12 @@ func TestHandle_PullRequest_Synchronize_OwnCommitSuppressed(t *testing.T) {
 	if err := env.handler.Handle(context.Background(), "pull_request", sign(testSecret, body), body); err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
-	if len(env.sent) != 0 {
-		t.Errorf("expected no notification about your own pushed commit, got %v", env.sent)
+	if len(env.sent) != 1 {
+		t.Fatalf("expected 1 notification about your own pushed commit, got %d: %v", len(env.sent), env.sent)
+	}
+	want := "*<https://github.com/acme/widgets/pull/42|acme/widgets#42> (@someone-else):* Add widget support\n> *@emmahsax* <https://github.com/acme/widgets/commit/abc123def456|pushed a commit>"
+	if env.sent[0] != want {
+		t.Errorf("notification text = %q, want %q", env.sent[0], want)
 	}
 }
 

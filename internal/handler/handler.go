@@ -109,9 +109,9 @@ func (h *Handler) handleIssueComment(ctx context.Context, body []byte) error {
 	if evt.Action != "created" || evt.Issue.PullRequest == nil || !h.orgAllowed(evt.Repository.Owner.Login) {
 		return nil
 	}
-	if evt.Comment.User.Login == h.cfg.GitHubUsername {
-		return nil // don't notify the user about their own comment
-	}
+	// REQ-022 (extended): a self-authored comment still notifies, same as a
+	// self-submitted review — the user wants a full Slack activity record,
+	// including their own actions.
 
 	client, err := h.installationFor(ctx, evt.Installation.ID)
 	if err != nil {
@@ -150,9 +150,8 @@ func (h *Handler) handlePullRequestReviewComment(ctx context.Context, body []byt
 	if evt.Action != "created" || !h.orgAllowed(evt.Repository.Owner.Login) {
 		return nil
 	}
-	if evt.Comment.User.Login == h.cfg.GitHubUsername {
-		return nil // don't notify the user about their own comment
-	}
+	// REQ-022 (extended): a self-authored comment still notifies — see
+	// handleIssueComment.
 	if evt.PullRequest.Draft { // REQ-005
 		return nil
 	}
@@ -185,10 +184,11 @@ func (h *Handler) handlePullRequestReview(ctx context.Context, body []byte) erro
 	if evt.PullRequest.Draft { // REQ-005
 		return nil
 	}
-	if evt.Review.User.Login == h.cfg.GitHubUsername {
-		return nil // don't notify the user about their own review
-	}
-
+	// Unlike comments (handleIssueComment/handlePullRequestReviewComment) and
+	// commits (REQ-019), a self-submitted review is NOT excluded (REQ-022) —
+	// the user wants a Slack record of their own approve/request-changes/
+	// comment verdicts on a subscribed PR, same as they'd get for anyone
+	// else's.
 	var verb string
 	switch evt.Review.State {
 	case "approved":
@@ -278,9 +278,8 @@ func (h *Handler) handlePullRequest(ctx context.Context, body []byte) error {
 		if evt.PullRequest.Draft { // REQ-005
 			return nil
 		}
-		if evt.Sender.Login == h.cfg.GitHubUsername {
-			return nil // don't notify the user about their own commit
-		}
+		// REQ-022 (extended): a self-pushed commit still notifies — see
+		// handleIssueComment.
 		verb = "pushed a commit"
 		url = evt.Repository.HTMLURL + "/commit/" + evt.After
 	default:
